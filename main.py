@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 # ================= 配置区 =================
 API_TOKEN = '8417331227:AAESrsOPgEDMeu7NHgLMgoZrynkxoafBLBY'
 ADMIN_ID = 6649617045 
+# 保持你的长 Token 不变
 CURRENT_X_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXVjYWkiLCJzdWIiOiJ3ZWNoYXQ6bzhiQ2w2MmtyUUVwRzZHTmlaaF9YczhrcHBXVSIsImF1ZCI6WyJjZGN5cHciXSwiZXhwIjoxNzcwMDYwNTkzLCJuYmYiOjE3NzAwNDk3OTMsImlhdCI6MTc3MDA0OTc5MywianRpIjoiZjZjZDUxOTQtMDIyZS00YWIxLWI1NzUtNmQyYTc0YWI1MTUwIiwidXNlcl90eXBlIjoid2VjaGF0LXZpcCIsInVzZXJfaWQiOjMwMDQ1OH0.E8QrvHjur1JZPh2K43_ppaMq6NxQWj2EcSTP3AfRnsQAlIvOJwHAOXmCrDOQMFIbsO6dPyAmTV3CznKPrUkIZQ"
 
 # 初始化机器人
@@ -34,15 +35,15 @@ def run_batch_task(chat_id, msg_id, name, id_list):
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.68"
     }
     
+    # 预检 Token
     try:
         test_r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", 
                               json={"name": "测试", "id_no": "110101199001011234"}, headers=headers, timeout=5)
         res_json = test_r.json()
-        if res_json.get("code") == 401 or "失效" in res_json.get("msg", ""):
-            bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="⚠️ **任务终止:检测到当前 Token 已失效!**\n请使用 `/set_token` 更新后再试。")
+        if res_json.get("code") == 401:
+            bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="⚠️ **Token 已失效!** 请使用 `/set_token` 更新。")
             return
-    except Exception as e:
-        print(f"请求接口失败: {e}")
+    except: pass
 
     total = len(id_list)
     success_results = []
@@ -50,24 +51,26 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     is_running = True
     token_expired = False
 
+    # 优化后的进度监控：减少刷新频率，仅百分比变化时更新
     def progress_monitor():
         nonlocal done, is_running
-        last_sent_done = -1
+        last_percent = -1
         while is_running:
-            if done != last_sent_done:
-                progress_idx = int((done / total) * 10)
-                bar = "█" * progress_idx + "▒" + "░" * (9 - progress_idx)
+            if total > 0:
                 percent = int(done / total * 100)
-                try:
-                    bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=msg_id,
-                        text=(f"🔍 **正在核验...**\n📊 `{bar}` **{percent}%**\n🔢 `{done}` / `{total}`"),
-                        parse_mode='Markdown'
-                    )
-                    last_sent_done = done
-                except: pass
-            time.sleep(3)
+                if percent != last_percent:
+                    progress_idx = int(percent / 10)
+                    bar = "█" * progress_idx + "░" * (10 - progress_idx)
+                    try:
+                        bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=msg_id,
+                            text=f"🔍 **正在快速核验...**\n📊 `{bar}` **{percent}%**\n🔢 `{done}` / `{total}`",
+                            parse_mode='Markdown'
+                        )
+                        last_percent = percent
+                    except: pass
+            time.sleep(2) # 每2秒检查一次百分比变化
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
@@ -76,29 +79,33 @@ def run_batch_task(chat_id, msg_id, name, id_list):
         if not is_running: return
         try:
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
-            r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=10)
+            # 缩短超时时间提高响应速度
+            r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=6)
             res_data = r.json()
             if res_data.get("code") == 401:
                 token_expired = True
                 is_running = False
                 return
             if res_data.get("code") == 0:
-                success_results.append(f"`{name} {id_no}` ✅")
+                success_results.append(f"`{name} {id_no}` 二要素验证成功✅")
         except: pass
         finally: done += 1
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # 线程数调整为 10
+    with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(verify, id_list)
 
     is_running = False 
+    time.sleep(1) # 确保最后一次进度显示
+
     if token_expired:
-        bot.send_message(ADMIN_ID, "🚨 Token 已过期！")
+        bot.send_message(chat_id, "🚨 任务中途 Token 过期，请更新后重试。")
         return
 
     if success_results:
-        bot.send_message(chat_id, "\n".join(success_results), parse_mode='Markdown')
+        bot.send_message(chat_id, "✨ **发现成功匹配：**\n" + "\n".join(success_results), parse_mode='Markdown')
     else:
-        bot.send_message(chat_id, "❌ 未发现匹配。")
+        bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配（共 {total} 个）。")
 
 # --- 指令处理 ---
 @bot.message_handler(commands=['set_token'])
@@ -114,33 +121,28 @@ def update_token(m):
 
 @bot.message_handler(commands=['start'])
 def start_batch(message):
-    bot.send_message(message.chat.id, "请输入姓名:")
+    bot.send_message(message.chat.id, "👤 请输入核验姓名:")
     user_states[message.chat.id] = {'step': 'get_name'}
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_name')
 def get_name(message):
     user_states[message.chat.id] = {'step': 'get_ids', 'name': message.text.strip()}
-    bot.send_message(message.chat.id, f"请发送身份证号列表:")
+    bot.send_message(message.chat.id, f"📋 请发送身份证号列表（支持自由文本提取）:")
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_ids')
 def get_ids(message):
-    data = user_states[message.chat.id]
+    data = user_states.get(message.chat.id)
+    if not data: return
     raw_ids = re.findall(r'\d{17}[\dXx]', message.text)
     valid_ids = [i for i in raw_ids if is_valid_id(i)]
     if not valid_ids:
-        bot.reply_to(message, "❌ 未识别到有效号码。")
+        bot.reply_to(message, "❌ 未识别到任何有效身份证号。")
         return
-    status_msg = bot.send_message(message.chat.id, "⚙ 正在初始化...")
+    status_msg = bot.send_message(message.chat.id, "⚙ 正在启动多线程加速核验...")
     threading.Thread(target=run_batch_task, args=(message.chat.id, status_msg.message_id, data['name'], valid_ids)).start()
     del user_states[message.chat.id]
 
 # ================= 运行区 =================
 if __name__ == '__main__':
-    print("--- 机器人启动中... ---")
-    while True:
-        try:
-            print("连接 Telegram 服务器...")
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"连接出错: {e}, 10秒后尝试重连...")
-            time.sleep(10)
+    print("--- 机器人加速版启动中... ---")
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
