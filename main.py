@@ -96,7 +96,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
                 bot.send_message(chat_id, f"🚨 Token 失效，请联系 {ADMIN_USERNAME}")
                 return
             if res.get("code") == 0:
-                success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅\n💰 **剩余积分:** `{user_points[uid]}`"
+                success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功✅"
                 stop_signal, is_running = True, False
         except: pass
         finally: done += 1
