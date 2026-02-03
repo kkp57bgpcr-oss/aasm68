@@ -10,7 +10,7 @@ from telebot import types
 from concurrent.futures import ThreadPoolExecutor
 
 # ================= 核心配置 =================
-API_TOKEN = '8417331227:AAESrsOPgEDMeu7NHgLMgoZrynkxoafBLBY'
+API_TOKEN = '8338893180:AAH-l_4m1-tweKyt92bliyk4fsPqoPQWzpU'
 ADMIN_ID = 6649617045 
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
@@ -94,8 +94,9 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             res = r.json()
             if res.get("code") == 0:
-                success_match = (f"✨ **核验成功！**\n👤 **姓名:** {name}\n🆔 **号码:** `{id_no}`\n"
-                                f"✅ **验证通过**\n💰 **剩余积分:** {user_points[uid]}")
+                # ==================== 此处已按要求修改格式 ====================
+                success_match = f"✨ 发现成功匹配：\n{name} `{id_no}` 二要素验证成功✅"
+                # ============================================================
                 stop_signal, is_running = True, False
         except: pass
         finally: done += 1
