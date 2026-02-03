@@ -116,7 +116,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
 def add_points(message):
     # 非管理员拦截
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ **你无权访问**\n请联系管理员充值。", parse_mode='Markdown')
+        bot.reply_to(message, "🚫 **权限拒绝**\n请联系管理员充值。", parse_mode='Markdown')
         return
     try:
         parts = message.text.split()
@@ -132,7 +132,7 @@ def add_points(message):
 def set_token_command(message):
     # 非管理员拦截
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ **你无权访问**", parse_mode='Markdown')
+        bot.reply_to(message, "🚫 **权限拒绝**", parse_mode='Markdown')
         return
     msg = bot.send_message(message.chat.id, "🗝 请发送新的 X-Token:")
     bot.register_next_step_handler(msg, update_token)
