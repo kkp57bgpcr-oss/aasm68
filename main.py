@@ -97,7 +97,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
                 return
             if res.get("code") == 0:
                 # 改回你要求的格式：✨ 发现成功匹配：姓名 号码 二要素验证成功 ✅
-                success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅\n\n💰 剩余积分: `{user_points[uid]}`"
+                success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 核验正确✅\n💰 剩余积分: `{user_points[uid]}`"
                 stop_signal, is_running = True, False
         except: pass
         finally: done += 1
