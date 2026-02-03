@@ -62,7 +62,7 @@ def is_valid_id(n):
         return var_id[checksum] == n[17]
     except: return False
 
-# --- 核心核验任务 (带进度条) ---
+# --- 核心核验任务 (进度条一行化) ---
 def run_batch_task(chat_id, msg_id, name, id_list):
     global CURRENT_X_TOKEN
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json", "User-Agent": "Mozilla/5.0"}
@@ -78,9 +78,11 @@ def run_batch_task(chat_id, msg_id, name, id_list):
         while is_running:
             if total > 0:
                 percent = int(done / total * 100)
-                filled = int(15 * done // total)
-                bar = "⬛" * filled + "⬜" * (15 - filled)
-                current_text = f"⌛ **核验中...**\n`[{bar}]`  **{done}/{total}  {percent}%**"
+                filled = int(12 * done // total) # 进度条长度设为12
+                bar = "⬛" * filled + "⬜" * (12 - filled)
+                # 核心改进：进度条改为一行展示
+                current_text = f"⌛ **核验中...**\n`[{bar}]` **{done}/{total} {percent}%**"
+                
                 if current_text != last_text:
                     try:
                         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=current_text, parse_mode='Markdown')
@@ -102,6 +104,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
                 bot.send_message(chat_id, "🚨 Token 已失效，请联系管理员 @aaSm68 更新。")
                 return
             if res.get("code") == 0:
+                # 匹配截图中的结果展示样式
                 success_results.append(f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅")
         except: pass
         finally: done += 1
@@ -120,7 +123,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
 @bot.message_handler(commands=['add'])
 def add_points(message):
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "🚫 **权限拒绝**\n请联系管理员 @aaSm68 充值。", parse_mode='Markdown')
+        bot.reply_to(message, "🚫 **权限拒绝**\n请联系管理员 @aaSm68 充值。")
         return
     try:
         _, tid, amt = message.text.split()
@@ -131,9 +134,7 @@ def add_points(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_command(message):
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "🚫 **权限拒绝**", parse_mode='Markdown')
-        return
+    if message.from_user.id != ADMIN_ID: return
     msg = bot.send_message(message.chat.id, "🗝 请发送新的 X-Token:")
     bot.register_next_step_handler(msg, update_token)
 
@@ -194,28 +195,44 @@ def handle_steps(message):
         if user_points.get(uid, 0) < 50:
             bot.reply_to(message, "❌ 积分不足(需50)，请联系 @aaSm68")
             return
+        
         sex_input, card = message.text.strip(), state['card']
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in card]
         if sex_input == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
         elif sex_input == "女": char_sets[16] = ["0", "2", "4", "6", "8"]
 
-        valid_list = []
-        count = 0
-        for res in itertools.product(*char_sets):
-            num = "".join(res)
-            if is_valid_id(num):
-                valid_list.append(num)
-                count += 1
-            if count >= 100: break
+        bot.send_message(message.chat.id, "⏳ 正在深度计算...")
         
-        if valid_list:
-            user_points[uid] -= 50
-            save_points()
-            bot.send_message(message.chat.id, f"✅ 生成成功(扣除50分):\n`" + "\n".join(valid_list) + "`", parse_mode='Markdown')
-        else:
-            bot.send_message(message.chat.id, "❌ 未能生成符合规则的号码。")
+        file_name = "铭.txt"
+        valid_count = 0
+        
+        try:
+            with open(file_name, "w") as f:
+                for res in itertools.product(*char_sets):
+                    num = "".join(res)
+                    if is_valid_id(num):
+                        f.write(num + "\n")
+                        valid_count += 1
+                    if valid_count >= 5000: break 
+            
+            if valid_count > 0:
+                user_points[uid] -= 50
+                save_points()
+                with open(file_name, "rb") as doc:
+                    bot.send_document(
+                        message.chat.id, 
+                        doc, 
+                        caption=f"✅ 生成成功！\n📊 共计 `{valid_count}` 个合法号码\n💰 扣除 50 积分"
+                    )
+            else:
+                bot.send_message(message.chat.id, "❌ 未能生成符合规则的号码。")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ 处理出错: {str(e)}")
+        finally:
+            if os.path.exists(file_name): os.remove(file_name)
+            
         del user_states[message.chat.id]
 
 if __name__ == '__main__':
-    print("--- 综合版机器人正在运行 ---")
+    print("--- 铭批二机器人启动成功 ---")
     bot.infinity_polling()
