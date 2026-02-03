@@ -14,21 +14,24 @@ API_TOKEN = '8417331227:AAESrsOPgEDMeu7NHgLMgoZrynkxoafBLBY'
 ADMIN_ID = 6649617045 
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
-DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..." # 保持原样
+
+# 默认 Token
+DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXVjYWkiLCJzdWIiOiJ3ZWNoYXQ6bzhiQ2w2MmtyUUVwRzZHTmlaaF9YczhrcHBXVSIsImF1ZCI6WyJjZGN5cHciXSwiZXhwIjoxNzcwMDYwNTkzLCJuYmYiOjE3NzAwNDk3OTMsImlhdCI6MTc3MDA0OTc5MywianRpIjoiZjZjZDUxOTQtMDIyZS00YWIxLWI1NzUtNmQyYTc0YWI1MTUwIiwidXNlcl90eXBlIjoid2VjaGF0LXZpcCIsInVzZXJfaWQiOjMwMDQ1OH0.E8QrvHjur1JZPh2K43_ppaMq6NxQWj2EcSTP3AfRnsQAlIvOJwHAOXmCrDOQMFIbsO6dPyAmTV3CznKPrUkIZQ"
 
 bot = telebot.TeleBot(API_TOKEN)
 user_states = {}
-generated_cache = {} # 用于临时缓存生成的号码
+generated_cache = {} # 暂存生成的号码供后续核验
 
-# --- 数据加载与保存 ---
+# --- 数据持久化 ---
 def load_data():
-    pts, tk = {}, DEFAULT_TOKEN
+    pts = {}
     if os.path.exists(POINTS_FILE):
         try:
             with open(POINTS_FILE, 'r') as f:
                 data = json.load(f)
                 pts = {int(k): v for k, v in data.items()}
         except: pass
+    tk = DEFAULT_TOKEN
     if os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'r') as f: tk = f.read().strip()
@@ -53,7 +56,7 @@ def is_valid_id(n):
         return var_id[checksum] == n[17]
     except: return False
 
-# --- 核心核验任务 ---
+# --- 核心核验任务 (100% 还原样式) ---
 def run_batch_task(chat_id, msg_id, name, id_list):
     global CURRENT_X_TOKEN
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json", "User-Agent": "Mozilla/5.0"}
@@ -67,7 +70,8 @@ def run_batch_task(chat_id, msg_id, name, id_list):
                 percent = int(done / total * 100)
                 filled = int(15 * done // total) 
                 bar = "█" * filled + "▒" * (15 - filled)
-                current_text = f"⏳ **核验中...**\n`[{bar}] {done}/{total} {percent}%`"
+                # 还原全覆盖样式
+                current_text = f"⌛ **核验中...**\n`[{bar}] {done}/{total} {percent}%`"
                 if current_text != last_text:
                     try:
                         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=current_text, parse_mode='Markdown')
@@ -86,7 +90,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
             res = r.json()
             if res.get("code") == 401:
                 is_running = False
-                bot.send_message(chat_id, "🚨 Token 失效，请联系管理员 @aaSm68 更新。")
+                bot.send_message(chat_id, "🚨 Token 失效，请联系 @aaSm68")
                 return
             if res.get("code") == 0:
                 success_results.append(f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅")
@@ -103,127 +107,121 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配结果。")
 
-# --- 按钮回调处理 ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("verify_all_"))
-def callback_verify_all(call):
-    uid = call.from_user.id
-    if uid not in generated_cache:
-        bot.answer_callback_query(call.id, "❌ 缓存已过期，请重新生成。")
-        return
-    
-    if user_points.get(uid, 0) < 100:
-        bot.answer_callback_query(call.id, "❌ 积分不足(需100)", show_alert=True)
-        return
-
-    # 扣费并开始核验
-    user_points[uid] -= 100
-    save_points()
-    
-    data = generated_cache[uid]
-    msg = bot.send_message(call.message.chat.id, "⚙️ 正在对生成的号码启动全自动核验...")
-    threading.Thread(target=run_batch_task, args=(call.message.chat.id, msg.message_id, data['name'], data['ids'])).start()
-    
-    # 清理缓存防止重复点击
-    del generated_cache[uid]
-    bot.answer_callback_query(call.id, "🚀 启动核验成功！")
-
-# --- 基础指令 ---
+# --- 管理员指令：增加积分 ---
 @bot.message_handler(commands=['add'])
 def add_points(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 权限拒绝。请联系 @aaSm68")
+        return
     try:
+        # 格式: /add 用户ID 积分
         _, tid, amt = message.text.split()
-        user_points[int(tid)] = user_points.get(int(tid), 0) + int(amt)
+        target_id = int(tid)
+        amount = int(amt)
+        user_points[target_id] = user_points.get(target_id, 0) + amount
         save_points()
-        bot.reply_to(message, f"✅ 积分更新！用户 `{tid}` 余额: `{user_points[int(tid)]}`")
-    except: pass
+        bot.reply_to(message, f"✅ 积分充值成功！\n用户: `{target_id}`\n新增: `{amount}`\n当前余额: `{user_points[target_id]}`", parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, "❌ 格式错误！正确格式: `/add 12345678 1000`")
 
+# --- 按钮回调 ---
+@bot.callback_query_handler(func=lambda call: call.data == "start_verify_flow")
+def callback_start_verify(call):
+    uid = call.from_user.id
+    if uid not in generated_cache:
+        bot.answer_callback_query(call.id, "❌ 数据已过期，请重新生成。")
+        return
+    bot.send_message(call.message.chat.id, "👤 请输入要核验的姓名:")
+    user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
+    bot.answer_callback_query(call.id)
+
+# --- 入口指令 ---
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
     pts = user_points.get(uid, 0)
-    bot.send_message(message.chat.id, f"👋 **核验模式**\n💰 积分: `{pts}`\n💸 费用: 100/次\n👤 管理员: @aaSm68\n✨ 充值积分请联系管理员\n\n请输入姓名:", parse_mode='Markdown')
+    bot.send_message(message.chat.id, f"👋 **核验模式**\n💰 积分: `{pts}`\n💸 费用: 100/次\n👤 管理员: @aaSm68\n✨ 充值请联系管理员\n\n请输入姓名:", parse_mode='Markdown')
     user_states[message.chat.id] = {'step': 'v_name'}
 
 @bot.message_handler(commands=['gen'])
 def gen_cmd(message):
     uid = message.from_user.id
     pts = user_points.get(uid, 0)
-    bot.send_message(message.chat.id, f"🛠 **生成模式**\n💰 积分: `{pts}`\n💸 费用: 50/次\n👤 管理员: @aaSm68\n\n请输入基础号(x表示未知):", parse_mode='Markdown')
+    bot.send_message(message.chat.id, f"🛠 **生成模式**\n💰 积分: `{pts}`\n💸 费用: 50/次\n\n请输入补全号(x表示未知):", parse_mode='Markdown')
     user_states[message.chat.id] = {'step': 'g_card'}
 
-# --- 步骤流 ---
+# --- 状态机处理 ---
 @bot.message_handler(func=lambda m: m.chat.id in user_states)
 def handle_steps(message):
     state = user_states[message.chat.id]
     uid = message.from_user.id
-    
-    if state['step'] == 'v_name':
-        user_states[message.chat.id].update({'step': 'v_ids', 'name': message.text.strip()})
-        bot.send_message(message.chat.id, "请发送身份证号列表:")
-    
-    elif state['step'] == 'v_ids':
-        if user_points.get(uid, 0) < 100:
-            bot.reply_to(message, "❌ 积分不足")
-            return
-        raw = re.findall(r'\d{17}[\dXx]', message.text)
-        v_ids = [i for i in raw if is_valid_id(i)]
-        if not v_ids: 
-            bot.reply_to(message, "❌ 无有效号码。")
-            return
-        user_points[uid] -= 100
-        save_points()
-        msg = bot.send_message(message.chat.id, "⚙️ 启动核验...")
-        threading.Thread(target=run_batch_task, args=(message.chat.id, msg.message_id, state['name'], v_ids)).start()
-        del user_states[message.chat.id]
+    text = message.text.strip()
 
-    elif state['step'] == 'g_card':
-        card = message.text.strip().lower()
-        if len(card) != 18: return
-        user_states[message.chat.id].update({'step': 'g_name', 'card': card})
-        bot.send_message(message.chat.id, "请输入要核验的姓名:")
-
-    elif state['step'] == 'g_name':
-        user_states[message.chat.id].update({'step': 'g_sex', 'name': message.text.strip()})
+    # 1. 生成流程: 输入性别后发文件
+    if state['step'] == 'g_card':
+        if len(text) != 18: return
+        user_states[message.chat.id].update({'step': 'g_sex', 'card': text.lower()})
         bot.send_message(message.chat.id, "请输入性别(男/女/未知):")
 
     elif state['step'] == 'g_sex':
         if user_points.get(uid, 0) < 50:
-            bot.reply_to(message, "❌ 积分不足(需50)")
+            bot.reply_to(message, "❌ 积分不足(50)")
             return
-        sex_input, card, name = message.text.strip(), state['card'], state['name']
+        
+        card = state['card']
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in card]
-        if sex_input == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
-        elif sex_input == "女": char_sets[16] = ["0", "2", "4", "6", "8"]
+        if text == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
+        elif text == "女": char_sets[16] = ["0", "2", "4", "6", "8"]
 
-        bot.send_message(message.chat.id, "⏳ 正在深度计算...")
-        file_name, valid_ids = "铭.txt", []
-        try:
-            for res in itertools.product(*char_sets):
-                num = "".join(res)
-                if is_valid_id(num):
-                    valid_ids.append(num)
-                if len(valid_ids) >= 5000: break 
+        bot.send_message(message.chat.id, "⏳ 正在计算补全...")
+        file_name, ids = "铭.txt", []
+        for res in itertools.product(*char_sets):
+            num = "".join(res)
+            if is_valid_id(num): ids.append(num)
+            if len(ids) >= 5000: break
+        
+        if ids:
+            user_points[uid] -= 50
+            save_points()
+            generated_cache[uid] = {'ids': ids}
+            with open(file_name, "w") as f: f.write("\n".join(ids))
             
-            if valid_ids:
-                user_points[uid] -= 50
-                save_points()
-                with open(file_name, "w") as f:
-                    f.write("\n".join(valid_ids))
-                
-                # 缓存数据用于后续一键核验
-                generated_cache[uid] = {'name': name, 'ids': valid_ids}
-                
-                # 创建一键核验按钮
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("🚀 立即核验全部生成的号码 (100积分)", callback_data=f"verify_all_{uid}"))
-                
-                with open(file_name, "rb") as doc:
-                    bot.send_document(message.chat.id, doc, caption=f"✅ 生成成功！共 `{len(valid_ids)}` 个\n💰 扣除 50 积分\n\n**是否立即开始核验？**", parse_mode='Markdown', reply_markup=markup)
-            else:
-                bot.send_message(message.chat.id, "❌ 未匹配到合法号码。")
-        finally:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🚀 立即核验全部号码 (100积分)", callback_data="start_verify_flow"))
+            
+            with open(file_name, "rb") as doc:
+                bot.send_document(message.chat.id, doc, caption=f"✅ 生成成功！共 `{len(ids)}` 个\n💰 扣除 50 积分", reply_markup=markup)
             if os.path.exists(file_name): os.remove(file_name)
+        else:
+            bot.send_message(message.chat.id, "❌ 未发现合法组合。")
+        del user_states[message.chat.id]
+
+    # 2. 生成后的核验: 问姓名 -> 开始
+    elif state['step'] == 'v_name_after_gen':
+        if user_points.get(uid, 0) < 100:
+            bot.reply_to(message, "❌ 积分不足(100)")
+            return
+        user_points[uid] -= 100
+        save_points()
+        ids = generated_cache[uid]['ids']
+        msg = bot.send_message(message.chat.id, "⚙️ 启动全自动核验...")
+        threading.Thread(target=run_batch_task, args=(message.chat.id, msg.message_id, text, ids)).start()
+        del user_states[message.chat.id]
+
+    # 3. 普通核验模式
+    elif state['step'] == 'v_name':
+        user_states[message.chat.id].update({'step': 'v_ids', 'name': text})
+        bot.send_message(message.chat.id, "请发送身份证号列表:")
+
+    elif state['step'] == 'v_ids':
+        if user_points.get(uid, 0) < 100: return
+        raw = re.findall(r'\d{17}[\dXx]', text)
+        v_ids = [i for i in raw if is_valid_id(i)]
+        if not v_ids: return
+        user_points[uid] -= 100
+        save_points()
+        msg = bot.send_message(message.chat.id, "⚙️ 启动核验...")
+        threading.Thread(target=run_batch_task, args=(message.chat.id, msg.message_id, state['name'], v_ids)).start()
         del user_states[message.chat.id]
 
 if __name__ == '__main__':
