@@ -22,7 +22,6 @@ def load_points():
     if os.path.exists(POINTS_FILE):
         try:
             with open(POINTS_FILE, 'r') as f:
-                # json存的是字符串key，转回int
                 data = json.load(f)
                 return {int(k): v for k, v in data.items()}
         except: return {}
@@ -112,23 +111,29 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配。")
 
-# --- 管理员指令 ---
+# --- 管理员指令（带拦截提示） ---
 @bot.message_handler(commands=['add'])
 def add_points(message):
-    if message.from_user.id != ADMIN_ID: return
+    # 非管理员拦截
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ **你无权访问**\n请联系管理员充值。", parse_mode='Markdown')
+        return
     try:
         parts = message.text.split()
         target_id = int(parts[1])
         amount = int(parts[2])
         user_points[target_id] = user_points.get(target_id, 0) + amount
-        save_points()  # 存盘
+        save_points()
         bot.reply_to(message, f"✅ 已更新！用户 `{target_id}` 当前积分: `{user_points[target_id]}`", parse_mode='Markdown')
     except:
-        bot.reply_to(message, "❌ 格式: `/add 用户ID 分数` (如: `/add 123456 500`)", parse_mode='Markdown')
+        bot.reply_to(message, "❌ 格式: `/add 用户ID 分数`", parse_mode='Markdown')
 
 @bot.message_handler(commands=['set_token'])
 def set_token_command(message):
-    if message.from_user.id != ADMIN_ID: return
+    # 非管理员拦截
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ **你无权访问**", parse_mode='Markdown')
+        return
     msg = bot.send_message(message.chat.id, "🗝 请发送新的 X-Token:")
     bot.register_next_step_handler(msg, update_token)
 
@@ -148,7 +153,6 @@ def start_cmd(message):
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_name')
 def get_name(message):
     user_states[message.chat.id] = {'step': 'get_ids', 'name': message.text.strip()}
-    points = user_points.get(message.from_user.id, 0)
     bot.send_message(message.chat.id, f"请发送身份证号列表:")
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_ids')
@@ -168,7 +172,6 @@ def get_ids(message):
         bot.reply_to(message, "❌ 未识别到有效号码。")
         return
 
-    # 扣除积分并存盘
     user_points[uid] = current_p - 50
     save_points() 
     
@@ -177,5 +180,5 @@ def get_ids(message):
     del user_states[message.chat.id]
 
 if __name__ == '__main__':
-    print("--- 积分存档版机器人启动中... ---")
+    print("--- 权限增强版启动中... ---")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
