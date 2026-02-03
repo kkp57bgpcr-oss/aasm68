@@ -58,7 +58,7 @@ def is_valid_id(n):
         return var_id[checksum] == n[17]
     except: return False
 
-# --- 核心核验任务 (优化进度条样式) ---
+# --- 核心核验任务 (进度条视觉终极优化) ---
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     global CURRENT_X_TOKEN
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json", "User-Agent": "Mozilla/5.0"}
@@ -72,20 +72,20 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
         while is_running and not stop_signal:
             if total > 0:
                 percent = int(done / total * 100)
-                # 修改点：使用聊天窗口内外渲染更一致的符号组合
-                # 这里模拟你图片中“外面看”的那种棋盘格和实心感
-                filled_len = int(15 * done // total)
-                bar = "█" * filled_len + "░" * (15 - filled_len) 
+                # 优化点：总长20格，使用渲染最稳的实心方块和棋盘方块
+                bar_length = 20
+                filled_len = int(bar_length * done // total)
+                bar = "█" * filled_len + "▒" * (bar_length - filled_len) 
                 
-                # 强制使用 Markdown 代码块格式，确保聊天窗口内不缩进
-                current_text = f"⌛ **核验中...**\n`[{bar}] {done}/{total} {percent}%`"
+                # 关键：这里去掉反引号中间的空格，确保在任何端都对齐
+                current_text = f"⌛ **核验中...**\n`[{bar}]` `{done}/{total}` `{percent}%`"
                 
                 if current_text != last_text:
                     try:
                         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=current_text, parse_mode='Markdown')
                         last_text = current_text
                     except: pass
-            time.sleep(1.5) # 稍微加快刷新频率
+            time.sleep(1.2) # 缩短刷新间隔，让进度条动起来更顺滑
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
@@ -99,7 +99,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             
             if res.get("code") == 401:
                 is_running, stop_signal = False, True
-                bot.send_message(chat_id, f"🚨 Token 实效，请联系 {ADMIN_USERNAME}")
+                bot.send_message(chat_id, f"🚨 Token 失效，请联系管理员 {ADMIN_USERNAME} 更新。")
                 return
             if res.get("code") == 0:
                 success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅"
@@ -115,16 +115,16 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     
     if success_match:
         try:
-            # 结束后进度条拉满
-            final_bar = "`[███████████████] " + f"{total}/{total} 100%`"
+            # 结束后进度条瞬间填满
+            final_bar = "`[████████████████████]` `100%`"
             bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"⌛ **核验完成**\n{final_bar}", parse_mode='Markdown')
         except: pass
-        # 弹出的正确结果消息
+        # 命中成功后，按照要求弹出一遍新消息
         bot.send_message(chat_id, success_match, parse_mode='Markdown')
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配结果。")
 
-# ================= 以下逻辑保持不变 (含所有功能) =================
+# ================= 管理员及常规指令逻辑 (功能全保留) =================
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
@@ -136,7 +136,7 @@ def process_token_update(message):
     global CURRENT_X_TOKEN
     CURRENT_X_TOKEN = message.text.strip()
     save_token(CURRENT_X_TOKEN)
-    bot.send_message(message.chat.id, "✅ **Token 更新成功！**")
+    bot.send_message(message.chat.id, "✅ **Token 更新成功！** 现已立即生效。")
 
 @bot.message_handler(commands=['add'])
 def add_points(message):
@@ -145,7 +145,7 @@ def add_points(message):
         _, tid, amt = message.text.split()
         user_points[int(tid)] = user_points.get(int(tid), 0) + int(amt)
         save_points()
-        bot.reply_to(message, f"✅ 充值成功！余额: `{user_points[int(tid)]}`")
+        bot.reply_to(message, f"✅ 充值成功！当前余额: `{user_points[int(tid)]}`")
     except: bot.reply_to(message, "格式: `/add ID 分数`")
 
 @bot.message_handler(commands=['start'])
