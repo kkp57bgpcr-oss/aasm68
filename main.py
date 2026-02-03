@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 # ================= 配置区 =================
 API_TOKEN = '8417331227:AAESrsOPgEDMeu7NHgLMgoZrynkxoafBLBY'
 ADMIN_ID = 6649617045 
+# 建议：此 Token 易失效，请通过 /set_token 动态更新
 CURRENT_X_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJsaXVjYWkiLCJzdWIiOiJ3ZWNoYXQ6bzhiQ2w2MmtyUUVwRzZHTmlaaF9YczhrcHBXVSIsImF1ZCI6WyJjZGN5cHciXSwiZXhwIjoxNzcwMDYwNTkzLCJuYmYiOjE3NzAwNDk3OTMsImlhdCI6MTc3MDA0OTc5MywianRpIjoiZjZjZDUxOTQtMDIyZS00YWIxLWI1NzUtNmQyYTc0YWI1MTUwIiwidXNlcl90eXBlIjoid2VjaGF0LXZpcCIsInVzZXJfaWQiOjMwMDQ1OH0.E8QrvHjur1JZPh2K43_ppaMq6NxQWj2EcSTP3AfRnsQAlIvOJwHAOXmCrDOQMFIbsO6dPyAmTV3CznKPrUkIZQ"
 
 # 初始化
@@ -103,7 +104,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     time.sleep(1)
 
     if token_expired:
-        bot.send_message(chat_id, "🚨 Token 过期，请联系管理员。")
+        bot.send_message(chat_id, "🚨 Token 过期，请联系管理员 @aaSm68 更新。")
         return
 
     if success_results:
@@ -111,12 +112,11 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配。")
 
-# --- 管理员指令（带拦截提示） ---
+# --- 管理员指令 ---
 @bot.message_handler(commands=['add'])
 def add_points(message):
-    # 非管理员拦截
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "🚫 **权限拒绝**\n请联系管理员充值。", parse_mode='Markdown')
+        bot.reply_to(message, "🚫 **权限拒绝**\n请联系管理员 @aaSm68 充值。", parse_mode='Markdown')
         return
     try:
         parts = message.text.split()
@@ -130,7 +130,6 @@ def add_points(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_command(message):
-    # 非管理员拦截
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "🚫 **权限拒绝**", parse_mode='Markdown')
         return
@@ -147,7 +146,15 @@ def update_token(m):
 def start_cmd(message):
     uid = message.from_user.id
     points = user_points.get(uid, 0)
-    bot.send_message(message.chat.id, f"👋 您好！您的ID: `{uid}`\n💰 当前积分: `{points}`\n💡 每次核验消耗 50 积分。\n\n请输入姓名:", parse_mode='Markdown')
+    # 在这里添加了管理员联系方式
+    welcome_text = (
+        f"👋 您好！您的ID: `{uid}`\n"
+        f"💰 当前积分: `{points}`\n"
+        f"💡 每次核验消耗 50 积分。\n"
+        f"👤 管理员: @aaSm68\n\n"
+        f"请输入姓名:"
+    )
+    bot.send_message(message.chat.id, welcome_text, parse_mode='Markdown')
     user_states[message.chat.id] = {'step': 'get_name'}
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_name')
@@ -161,7 +168,7 @@ def get_ids(message):
     current_p = user_points.get(uid, 0)
     
     if current_p < 50:
-        bot.reply_to(message, f"❌ 积分不足！\n当前积分: `{current_p}`\n请联系管理员充值。", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ 积分不足！\n当前积分: `{current_p}`\n请联系管理员 @aaSm68 充值。", parse_mode='Markdown')
         return
 
     data = user_states.get(message.chat.id)
