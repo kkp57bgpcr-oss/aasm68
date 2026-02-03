@@ -149,7 +149,7 @@ def start_cmd(message):
 def get_name(message):
     user_states[message.chat.id] = {'step': 'get_ids', 'name': message.text.strip()}
     points = user_points.get(message.from_user.id, 0)
-    bot.send_message(message.chat.id, f"👤 姓名: {message.text.strip()}\n💰 剩余积分: {points}\n\n请发送身份证号列表:")
+    bot.send_message(message.chat.id, f"请发送身份证号列表:")
 
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id, {}).get('step') == 'get_ids')
 def get_ids(message):
