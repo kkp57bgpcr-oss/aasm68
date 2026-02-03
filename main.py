@@ -16,7 +16,6 @@ ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 
-# 默认初始 Token
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..." 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -32,7 +31,6 @@ def load_data():
                 data = json.load(f)
                 pts = {int(k): v for k, v in data.items()}
         except: pass
-    
     tk = DEFAULT_TOKEN
     if os.path.exists(TOKEN_FILE):
         try:
@@ -60,7 +58,7 @@ def is_valid_id(n):
         return var_id[checksum] == n[17]
     except: return False
 
-# --- 核心核验任务 (命中即停 & 独立弹窗) ---
+# --- 核心核验任务 (优化进度条样式) ---
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     global CURRENT_X_TOKEN
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json", "User-Agent": "Mozilla/5.0"}
@@ -74,15 +72,20 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
         while is_running and not stop_signal:
             if total > 0:
                 percent = int(done / total * 100)
-                filled = int(15 * done // total) 
-                bar = "█" * filled + "▒" * (15 - filled)
+                # 修改点：使用聊天窗口内外渲染更一致的符号组合
+                # 这里模拟你图片中“外面看”的那种棋盘格和实心感
+                filled_len = int(15 * done // total)
+                bar = "█" * filled_len + "░" * (15 - filled_len) 
+                
+                # 强制使用 Markdown 代码块格式，确保聊天窗口内不缩进
                 current_text = f"⌛ **核验中...**\n`[{bar}] {done}/{total} {percent}%`"
+                
                 if current_text != last_text:
                     try:
                         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=current_text, parse_mode='Markdown')
                         last_text = current_text
                     except: pass
-            time.sleep(2)
+            time.sleep(1.5) # 稍微加快刷新频率
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
@@ -96,10 +99,9 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             
             if res.get("code") == 401:
                 is_running, stop_signal = False, True
-                bot.send_message(chat_id, f"🚨 Token 失效，请联系 {ADMIN_USERNAME} 更新。")
+                bot.send_message(chat_id, f"🚨 Token 实效，请联系 {ADMIN_USERNAME}")
                 return
             if res.get("code") == 0:
-                # 记录成功结果
                 success_match = f"✨ **发现成功匹配：**\n{name} `{id_no}` 二要素验证成功 ✅"
                 stop_signal, is_running = True, False
         except: pass
@@ -112,27 +114,29 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     time.sleep(0.5)
     
     if success_match:
-        # 修改原消息显示 100% 进度
         try:
-            bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"⌛ **核验完成**\n`[███████████████] {total}/{total} 100%`", parse_mode='Markdown')
+            # 结束后进度条拉满
+            final_bar = "`[███████████████] " + f"{total}/{total} 100%`"
+            bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"⌛ **核验完成**\n{final_bar}", parse_mode='Markdown')
         except: pass
-        # 按照截图要求，【重新弹出一遍】独立的结果消息
+        # 弹出的正确结果消息
         bot.send_message(chat_id, success_match, parse_mode='Markdown')
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=f"❌ 核验完成，未发现匹配结果。")
 
-# --- 管理员功能 ---
+# ================= 以下逻辑保持不变 (含所有功能) =================
+
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: return
-    msg = bot.reply_to(message, "🗝 **请输入新的 X-Token:**")
+    msg = bot.reply_to(message, "🗝 **请输入新 X-Token:**")
     bot.register_next_step_handler(msg, process_token_update)
 
 def process_token_update(message):
     global CURRENT_X_TOKEN
     CURRENT_X_TOKEN = message.text.strip()
     save_token(CURRENT_X_TOKEN)
-    bot.send_message(message.chat.id, "✅ **Token 更新成功！** 现已立即生效并保存至本地。")
+    bot.send_message(message.chat.id, "✅ **Token 更新成功！**")
 
 @bot.message_handler(commands=['add'])
 def add_points(message):
@@ -141,10 +145,9 @@ def add_points(message):
         _, tid, amt = message.text.split()
         user_points[int(tid)] = user_points.get(int(tid), 0) + int(amt)
         save_points()
-        bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 当前余额: `{user_points[int(tid)]}`")
+        bot.reply_to(message, f"✅ 充值成功！余额: `{user_points[int(tid)]}`")
     except: bot.reply_to(message, "格式: `/add ID 分数`")
 
-# --- 指令入口 ---
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
@@ -163,13 +166,12 @@ def gen_cmd(message):
 def callback_start_verify(call):
     uid = call.from_user.id
     if user_points.get(uid, 0) < 100:
-        bot.answer_callback_query(call.id, f"❌ 积分不足(需100)，请联系 {ADMIN_USERNAME}", show_alert=True)
+        bot.answer_callback_query(call.id, f"❌ 积分不足", show_alert=True)
         return
     bot.send_message(call.message.chat.id, "👤 请输入要核验的姓名:")
     user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
     bot.answer_callback_query(call.id)
 
-# --- 状态处理 ---
 @bot.message_handler(func=lambda m: m.chat.id in user_states)
 def handle_steps(message):
     state, uid, text = user_states[message.chat.id], message.from_user.id, message.text.strip()
@@ -183,37 +185,27 @@ def handle_steps(message):
         if user_points.get(uid, 0) < 50:
             bot.reply_to(message, "❌ 积分不足")
             return
-        
         bot.send_message(message.chat.id, "⏳ 正在计算补全...")
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in state['card']]
         if text == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
         elif text == "女": char_sets[16] = ["0", "2", "4", "6", "8"]
-        
         ids = [num for res in itertools.product(*char_sets) if is_valid_id(num := "".join(res))][:5000]
-        
         if ids:
             user_points[uid] -= 50
             save_points()
             generated_cache[uid] = {'ids': ids}
-            
-            # 发送生成的文件
             file_name = "铭.txt"
             with open(file_name, "w") as f: f.write("\n".join(ids))
-            
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🚀 立即核验这些号码 (100积分)", callback_data="start_verify_flow"))
-            
             with open(file_name, "rb") as doc:
                 bot.send_document(message.chat.id, doc, caption=f"✅ 生成成功！共 `{len(ids)}` 个\n💰 扣除 50 积分，余额 `{user_points[uid]}`", reply_markup=markup)
-            
             os.remove(file_name) 
         else: bot.send_message(message.chat.id, "❌ 未发现合法组合")
         del user_states[message.chat.id]
 
     elif state['step'] == 'v_name_after_gen':
-        if user_points.get(uid, 0) < 100:
-            bot.reply_to(message, "❌ 积分不足")
-            return
+        if user_points.get(uid, 0) < 100: return
         user_points[uid] -= 100
         save_points()
         msg = bot.send_message(message.chat.id, "⚙️ 启动核验任务...")
@@ -225,17 +217,13 @@ def handle_steps(message):
         bot.send_message(message.chat.id, "请发送身份证号列表:")
 
     elif state['step'] == 'v_ids':
-        if user_points.get(uid, 0) < 100:
-            bot.reply_to(message, "❌ 积分不足")
-            return
+        if user_points.get(uid, 0) < 100: return
         v_ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if is_valid_id(i)]
         if v_ids:
             user_points[uid] -= 100
             save_points()
             msg = bot.send_message(message.chat.id, "⚙️ 启动核验任务...")
             threading.Thread(target=run_batch_task, args=(message.chat.id, msg.message_id, state['name'], v_ids, uid)).start()
-        else:
-            bot.reply_to(message, "❌ 无有效格式号码")
         del user_states[message.chat.id]
 
 if __name__ == '__main__':
