@@ -116,7 +116,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                status_line = "👤 用户状态：888svip" if is_svip(uid) else "👤 用户状态：普通用户"
+                status_line = "👤 用户状态：888 SVIP" if is_svip(uid) else "👤 用户状态：普通用户"
                 success_match = (
                     f"✅ 核验成功！\n\n"
                     f"{name} {id_no} 二要素核验一致✅\n\n"
@@ -145,7 +145,7 @@ def start_cmd(message):
         save_points()
     user_states[message.chat.id] = {'step': 'v_name'}
     pts = user_points.get(uid, 0)
-    status = "888svip" if is_svip(uid) else "普通用户"
+    status = "888 SVIP" if is_svip(uid) else "普通用户"
     menu_text = (
         f"👋 **欢迎使用铭核验机器人**\n\n"
         f"💰 积分: `{pts}`\n"
@@ -273,7 +273,7 @@ def handle_all_messages(message):
             generated_cache[uid] = ids 
             with open("铭.txt", "w") as f: f.write("\n".join(ids))
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (SVIP免积分)", callback_data="start_verify_flow"))
+            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (888用户免积分)", callback_data="start_verify_flow"))
             bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 `{len(ids)}` 个", reply_markup=markup)
         del user_states[chat_id]
 
