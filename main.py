@@ -184,13 +184,21 @@ def add_svip_cmd(message):
         expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         svip_users[str(target_id)] = expiry_date
         save_svip()
-        bot.reply_to(message, f"✅ 授权成功！\n用户: `{target_id}`\n级别: `888svip`\n到期时间: `{expiry_date}`", parse_mode='Markdown\n恭喜您成为尊贵的888用户！')
+        
+        # 修正格式：将提示文字放入 response_text
+        response_text = (
+            f"✅ 授权成功！\n"
+            f"用户: `{target_id}`\n"
+            f"级别: `888svip`\n"
+            f"到期时间: `{expiry_date}`\n\n"
+            f"恭喜您成为尊贵的888用户！"
+        )
+        bot.reply_to(message, response_text, parse_mode='Markdown')
     except:
         bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`")
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    # 补全普通用户拦截
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "🚫 **权限拒绝**")
         return
@@ -205,7 +213,6 @@ def add_points_cmd(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    # 补全普通用户拦截
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "🚫 **权限拒绝**")
         return
