@@ -130,10 +130,16 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
         executor.map(verify, id_list)
 
     is_running = False
+    
+    # 修改处：先删除进度条消息
+    try:
+        bot.delete_message(chat_id, msg_id)
+    except: pass
+
     if success_match:
         bot.send_message(chat_id, success_match)
     else:
-        bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="❌ 核验完成，未发现匹配结果。")
+        bot.send_message(chat_id, "❌ 核验完成，未发现匹配结果。")
 
 # ================= 2. 指令逻辑 =================
 
@@ -185,7 +191,6 @@ def add_svip_cmd(message):
         svip_users[str(target_id)] = expiry_date
         save_svip()
         
-        # 管理员端回复
         response_text = (
             f"✅ 授权成功！\n"
             f"用户: `{target_id}`\n"
@@ -195,9 +200,8 @@ def add_svip_cmd(message):
         )
         bot.reply_to(message, response_text, parse_mode='Markdown')
         
-        # 用户端提醒
         try:
-            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n📅 到期时间：`{expiry_date}`", parse_mode='Markdown')
+            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
         except: pass
         
     except:
@@ -214,10 +218,8 @@ def add_points_cmd(message):
         user_points[tid] = user_points.get(tid, 0) + amt
         save_points()
         
-        # 管理员端回复
         bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 余额: `{user_points[tid]}`")
         
-        # 用户端提醒
         try:
             bot.send_message(tid, f"💰 **充值提醒**：管理员已为您充值 `{amt}` 积分，当前余额：`{user_points[tid]}`", parse_mode='Markdown')
         except: pass
@@ -262,6 +264,7 @@ def handle_all_messages(message):
                 if not is_svip(uid):
                     user_points[uid] -= 100
                     save_points()
+                # 获取进度条消息
                 msg = bot.send_message(chat_id, get_ui_bar(0, len(v_ids)))
                 threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, state['name'], v_ids, uid)).start()
             else:
@@ -296,6 +299,7 @@ def handle_all_messages(message):
             if not is_svip(uid):
                 user_points[uid] -= 100
                 save_points()
+            # 获取进度条消息
             msg = bot.send_message(chat_id, get_ui_bar(0, len(generated_cache[uid])))
             threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, text, generated_cache[uid], uid)).start()
         del user_states[chat_id]
