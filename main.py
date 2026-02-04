@@ -121,7 +121,7 @@ def start_cmd(message):
     user_states[message.chat.id] = {'step': 'v_name'}
     pts = user_points.get(uid, 0)
     menu_text = (
-        f"👋 **欢迎使用铭核验机器人**\n\n💰 积分: `{pts}`\n💸 核验: `100`\n 🛠 生成: `50`\n👤 管理员: {ADMIN_USERNAME}\n\n"
+        f"👋 **欢迎使用铭核验机器人**\n\n💸 USDT: `{pts}`\n😇 核验: `100usdt`\n🛠 生成: `50usdt`\n👤 管理员: {ADMIN_USERNAME}\n\n"
         f"📢 **当前模式：核验模式**\n请输入姓名开始，或发送 /gen 切换。"
     )
     bot.send_message(message.chat.id, menu_text, parse_mode='Markdown')
@@ -162,7 +162,7 @@ def add_points(message):
         tid, amt = int(parts[1]), int(parts[2])
         user_points[tid] = user_points.get(tid, 0) + amt
         save_points()
-        bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 当前余额: `{user_points[tid]}`", parse_mode='Markdown')
+        bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 当前余额: `{user_points[tid]}USDT`", parse_mode='Markdown')
     except:
         bot.reply_to(message, "❌ 格式错误，请确保ID和积分是数字。")
 
@@ -203,7 +203,7 @@ def handle_all_messages(message):
             msg = bot.send_message(chat_id, get_ui_bar(0, len(v_ids)))
             threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, state['name'], v_ids, uid)).start()
         elif user_points.get(uid, 0) < 100:
-            bot.send_message(chat_id, "❌ 积分不足（需100积分）。")
+            bot.send_message(chat_id, "❌ USDT不足（需100usdt）。")
         del user_states[chat_id]
 
     elif state['step'] == 'g_card':
@@ -212,7 +212,7 @@ def handle_all_messages(message):
 
     elif state['step'] == 'g_sex':
         if user_points.get(uid, 0) < 50:
-            bot.send_message(chat_id, "❌ 积分不足（需50积分）。")
+            bot.send_message(chat_id, "❌ USDT不足（需50usdt）。")
             return
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in state['card']]
         if text == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
@@ -224,7 +224,7 @@ def handle_all_messages(message):
             generated_cache[uid] = ids 
             with open("铭.txt", "w") as f: f.write("\n".join(ids))
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (100积分)", callback_data="start_verify_flow"))
+            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (100USDT)", callback_data="start_verify_flow"))
             bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 `{len(ids)}` 个", reply_markup=markup)
         else:
             bot.send_message(chat_id, "❌ 无法生成有效号码，请检查补全号。")
