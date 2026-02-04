@@ -121,7 +121,7 @@ def start_cmd(message):
     user_states[message.chat.id] = {'step': 'v_name'}
     pts = user_points.get(uid, 0)
     menu_text = (
-        f"👋 **欢迎使用铭核验机器人**\n\n💰 积分: `{pts}`\n💸 核验: `100`/n 🛠 生成: `50`\n👤 管理员: {ADMIN_USERNAME}\n\n"
+        f"👋 **欢迎使用铭核验机器人**\n\n💰 积分: `{pts}`\n💸 核验: `100`\n 🛠 生成: `50`\n👤 管理员: {ADMIN_USERNAME}\n\n"
         f"📢 **当前模式：核验模式**\n请输入姓名开始，或发送 /gen 切换。"
     )
     bot.send_message(message.chat.id, menu_text, parse_mode='Markdown')
