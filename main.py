@@ -194,6 +194,12 @@ def add_svip_cmd(message):
             f"恭喜您成为尊贵的888用户！"
         )
         bot.reply_to(message, response_text, parse_mode='Markdown')
+        
+        # 增加用户提醒
+        try:
+            bot.send_message(target_id, f"🎉 **授权提醒**：恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n📅 到期时间：`{expiry_date}`", parse_mode='Markdown')
+        except: pass
+        
     except:
         bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`")
 
@@ -208,6 +214,12 @@ def add_points_cmd(message):
         user_points[tid] = user_points.get(tid, 0) + amt
         save_points()
         bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 余额: `{user_points[tid]}`")
+        
+        # 增加用户提醒
+        try:
+            bot.send_message(tid, f"💰 **充值提醒**：管理员已为您充值 `{amt}` 积分，当前余额：`{user_points[tid]}`", parse_mode='Markdown')
+        except: pass
+        
     except:
         bot.reply_to(message, "❌ 格式错误：`/add 用户ID 积分`")
 
