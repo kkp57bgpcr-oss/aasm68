@@ -175,7 +175,6 @@ def admin_cmd(message):
 
 @bot.message_handler(commands=['svip'])
 def add_svip_cmd(message):
-    # 增加普通用户拦截提示
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "🚫 **权限拒绝**")
         return
@@ -191,7 +190,10 @@ def add_svip_cmd(message):
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    # 补全普通用户拦截
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 **权限拒绝**")
+        return
     try:
         parts = message.text.split()
         tid, amt = int(parts[1]), int(parts[2])
@@ -203,7 +205,10 @@ def add_points_cmd(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    # 补全普通用户拦截
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 **权限拒绝**")
+        return
     msg = bot.reply_to(message, "🗝 **请输入新的 X-Token：**")
     bot.register_next_step_handler(msg, process_token_update)
 
