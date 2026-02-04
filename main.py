@@ -145,7 +145,7 @@ def start_cmd(message):
         save_points()
     user_states[message.chat.id] = {'step': 'v_name'}
     pts = user_points.get(uid, 0)
-    status = "SVIP 会员" if is_svip(uid) else "普通用户"
+    status = "SVIP会员" if is_svip(uid) else "普通用户"
     menu_text = (
         f"👋 **欢迎使用铭核验机器人**\n\n"
         f"💰 积分: `{pts}`\n"
