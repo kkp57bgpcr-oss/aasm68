@@ -116,7 +116,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                status_line = "👤 用户状态：SVIP 会员" if is_svip(uid) else "👤 用户状态：普通用户"
+                status_line = "👤 用户状态：SVIP会员" if is_svip(uid) else "👤 用户状态：普通用户"
                 success_match = (
                     f"✅ 核验成功！\n\n"
                     f"{name} {id_no} 二要素核验一致✅\n\n"
@@ -175,14 +175,17 @@ def admin_cmd(message):
 
 @bot.message_handler(commands=['svip'])
 def add_svip_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    # 增加普通用户拦截提示
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🚫 **权限拒绝**")
+        return
     try:
         parts = message.text.split()
         target_id, days = parts[1], int(parts[2])
         expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         svip_users[str(target_id)] = expiry_date
         save_svip()
-        bot.reply_to(message, f"✅ 授权成功！\n用户: `{target_id}`\n级别: `SVIP 会员`\n到期时间: `{expiry_date}`", parse_mode='Markdown')
+        bot.reply_to(message, f"✅ 授权成功！\n用户: `{target_id}`\n级别: `SVIP会员`\n到期时间: `{expiry_date}`", parse_mode='Markdown')
     except:
         bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`")
 
