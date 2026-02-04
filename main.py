@@ -185,7 +185,7 @@ def add_svip_cmd(message):
         svip_users[str(target_id)] = expiry_date
         save_svip()
         
-        # 修正格式：将提示文字放入 response_text
+        # 管理员端回复
         response_text = (
             f"✅ 授权成功！\n"
             f"用户: `{target_id}`\n"
@@ -195,9 +195,9 @@ def add_svip_cmd(message):
         )
         bot.reply_to(message, response_text, parse_mode='Markdown')
         
-        # 增加用户提醒
+        # 用户端提醒
         try:
-            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
+            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n📅 到期时间：`{expiry_date}`", parse_mode='Markdown')
         except: pass
         
     except:
@@ -213,9 +213,11 @@ def add_points_cmd(message):
         tid, amt = int(parts[1]), int(parts[2])
         user_points[tid] = user_points.get(tid, 0) + amt
         save_points()
+        
+        # 管理员端回复
         bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 余额: `{user_points[tid]}`")
         
-        # 增加用户提醒
+        # 用户端提醒
         try:
             bot.send_message(tid, f"💰 **充值提醒**：管理员已为您充值 `{amt}` 积分，当前余额：`{user_points[tid]}`", parse_mode='Markdown')
         except: pass
