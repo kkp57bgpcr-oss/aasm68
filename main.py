@@ -197,7 +197,7 @@ def add_svip_cmd(message):
         
         # 增加用户提醒
         try:
-            bot.send_message(target_id, f"🎉 **授权提醒**：恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n📅 到期时间：`{expiry_date}`", parse_mode='Markdown')
+            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
         except: pass
         
     except:
