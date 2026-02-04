@@ -16,7 +16,7 @@ ADMIN_ID = 6649617045
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
-SVIP_FILE = 'svip.json' # 新增：SVIP数据文件
+SVIP_FILE = 'svip.json' # SVIP数据文件
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -64,9 +64,11 @@ def save_token(new_tk):
 def is_svip(uid):
     uid_str = str(uid)
     if uid_str in svip_users:
-        expiry = datetime.strptime(svip_users[uid_str], '%Y-%m-%d %H:%M:%S')
-        if expiry > datetime.now():
-            return True
+        try:
+            expiry = datetime.strptime(svip_users[uid_str], '%Y-%m-%d %H:%M:%S')
+            if expiry > datetime.now():
+                return True
+        except: pass
     return False
 
 def is_valid_id(n):
@@ -166,12 +168,13 @@ def admin_cmd(message):
         f"📊 总查询数: {TOTAL_QUERIES}\n\n"
         f"💡 管理指令：\n"
         f"`/add 用户ID 分数` (充值积分)\n"
-        f"`/svip 用户ID 天数` (授权SVIP)"
+        f"`/svip 用户ID 天数` (授权SVIP)\n"
+        f"`/set_token` (更换接口Token)"
     )
     bot.send_message(message.chat.id, admin_text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['svip'])
-def add_svip(message):
+def add_svip_cmd(message):
     if message.from_user.id != ADMIN_ID: return
     try:
         parts = message.text.split()
@@ -184,7 +187,7 @@ def add_svip(message):
         bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`")
 
 @bot.message_handler(commands=['add'])
-def add_points(message):
+def add_points_cmd(message):
     if message.from_user.id != ADMIN_ID: return
     try:
         parts = message.text.split()
@@ -194,6 +197,18 @@ def add_points(message):
         bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 余额: `{user_points[tid]}`")
     except:
         bot.reply_to(message, "❌ 格式错误：`/add 用户ID 积分`")
+
+@bot.message_handler(commands=['set_token'])
+def set_token_cmd(message):
+    if message.from_user.id != ADMIN_ID: return
+    msg = bot.reply_to(message, "🗝 **请输入新的 X-Token：**")
+    bot.register_next_step_handler(msg, process_token_update)
+
+def process_token_update(message):
+    global CURRENT_X_TOKEN
+    CURRENT_X_TOKEN = message.text.strip()
+    save_token(CURRENT_X_TOKEN)
+    bot.send_message(message.chat.id, "✅ **接口 Token 已动态更新！**")
 
 @bot.message_handler(commands=['gen'])
 def gen_cmd(message):
@@ -215,7 +230,7 @@ def handle_all_messages(message):
         v_ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if is_valid_id(i)]
         if v_ids:
             if is_svip(uid) or user_points.get(uid, 0) >= 100:
-                if not is_svip(uid): # 只有非SVIP扣分
+                if not is_svip(uid):
                     user_points[uid] -= 100
                     save_points()
                 msg = bot.send_message(chat_id, get_ui_bar(0, len(v_ids)))
