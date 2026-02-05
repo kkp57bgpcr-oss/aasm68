@@ -88,7 +88,6 @@ def get_help_markup():
 def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
-    # 这里已改为可点击链接
     return (
         f"Admin[@aaSm68](https://t.me/aaSm68)\n\n"
         f"用户 ID: `{uid}`\n"
@@ -198,7 +197,7 @@ def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: 
         bot.reply_to(message, "🤡你没有权限使用该指令…")
         return
-    msg = bot.reply_to(message, "🗝 **请输入X-Token：**")
+    msg = bot.reply_to(message, "🗝 **请输入新的批量核验 X-Token：**")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
 @bot.message_handler(commands=['start'])
@@ -222,7 +221,7 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
-    bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "💡 请输入：**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -232,8 +231,10 @@ def handle_all(message):
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
+    
     state = user_states.get(chat_id)
     if not state: return
+
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
         bot.send_message(chat_id, f"✅ 记录姓名：{text}\n请发送身份证列表：")
@@ -247,16 +248,27 @@ def handle_all(message):
         user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
         bot.send_message(chat_id, "请输入性别 (男/女):")
     elif state['step'] == 'g_sex':
+        # 修复此处的语法逻辑，确保三元运算和列表推导式正确
         user_points[uid] -= 0.5; save_points()
         base_17 = state['card'][:17]
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
-        if text == "男": char_sets[16] = [c for char_sets[16] if int(c)%2!=0]
-        else: char_sets[16] = [c for char_sets[16] if int(c)%2==0]
+        
+        # 修正性别过滤逻辑
+        if text == "男":
+            char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
+        else:
+            char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
+            
         ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
         generated_cache[uid] = ids
-        with open("铭.txt", "w") as f: f.write("\n".join(ids))
+        
+        # 写入文件并发送
+        with open("result.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(ids))
+            
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
-        bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
+        with open("result.txt", "rb") as f:
+            bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
         del user_states[chat_id]
     elif state['step'] == 'v_name_after_gen':
         if uid in generated_cache:
@@ -288,4 +300,5 @@ def handle_callback(call):
         bot.send_message(call.message.chat.id, "请输入姓名:"); user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
 
 if __name__ == '__main__':
-    bot.infinity_polling()
+    # 启用异常重连，防止 Railway 环境下网络波动导致进程结束
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
