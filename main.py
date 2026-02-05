@@ -58,7 +58,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 河北解密逻辑 (新增) =================
+# ================= 2. 河北解密逻辑 =================
 
 def decrypt_data(encrypted_text_hex, key):
     try:
@@ -96,11 +96,20 @@ def hb_search_logic(chat_id, search_value, uid):
             if "error" in result_data:
                 bot.send_message(chat_id, result_data["error"])
             elif "page" in result_data and result_data["page"]:
-                user_points[uid] -= 0.5; save_points() # 扣费逻辑
+                # 扣费逻辑：按帮助文案扣除 5.5
+                user_points[uid] -= 5.5
+                save_points()
+
                 result_message = "✅河北全户查询结果:\n"
                 for item in result_data["page"]:
-                    result_message += f"姓名:{item['resName']}\n证件:{item['sfcode']}\n手机:{item['mobile']}\n地址:{item['address']}\n\n"
-                bot.send_message(chat_id, result_message.strip())
+                    result_message += f"姓名:{item['resName']}\n"
+                    result_message += f"证件:{item['sfcode']}\n"
+                    result_message += f"手机:{item['mobile']}\n"
+                    result_message += f"地址:{item['address']}\n\n"
+                
+                result_message += f"已扣除 **5.5** 积分！\n"
+                result_message += f"当前积分余额：**{user_points[uid]:.2f}** 积分"
+                bot.send_message(chat_id, result_message.strip(), parse_mode='Markdown')
             else:
                 bot.send_message(chat_id, "查询为空")
         else:
@@ -223,7 +232,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
 
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
     bot.send_message(message.chat.id, "请输入河北身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['admin'])
@@ -281,7 +290,7 @@ def handle_all(message):
     
     # 手机号或身份证号直接识别（HB查询）
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+        if user_points.get(uid, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
         return hb_search_logic(chat_id, text, uid)
 
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
@@ -312,9 +321,9 @@ def handle_all(message):
         else: char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
         ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
         generated_cache[uid] = ids
-        with open("result.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
+        with open("铭.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
-        with open("result.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
+        with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
         del user_states[chat_id]
     elif state['step'] == 'v_name_after_gen':
         if uid in generated_cache:
