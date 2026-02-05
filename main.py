@@ -84,7 +84,6 @@ def get_help_markup():
     return types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
 
 def get_main_text(source, uid, pts):
-    # 恢复详细菜单内容（包含用户名称和用户名）
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
     return (
@@ -98,7 +97,6 @@ def get_main_text(source, uid, pts):
         f"1 USDT = 1 积分"
     )
 
-# --- 进度条生成函数 ---
 def get_ui_bar(done, total):
     percent = int(done / total * 100) if total > 0 else 0
     bar_len = 16
@@ -108,7 +106,6 @@ def get_ui_bar(done, total):
 
 # ================= 3. 核验逻辑集成 =================
 
-# 接口 B: 单次核验逻辑
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
     headers = {
@@ -128,20 +125,17 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     except: res = "❌ 接口请求失败"
     bot.send_message(chat_id, res, parse_mode='Markdown')
 
-# 接口 A: 批量核验逻辑 (带实时进度条)
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
     total, done = len(id_list), 0
     success_match, is_running = None, True
     lock = threading.Lock()
 
-    # 进度条监控线程
     def progress_monitor():
         nonlocal done, is_running
         while is_running:
             time.sleep(3)
-            with lock:
-                current_done = done
+            with lock: current_done = done
             try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(current_done, total))
             except: pass
 
@@ -190,7 +184,7 @@ def add_points_cmd(message):
         save_points()
         bot.reply_to(message, f"✅ 已充值！\n用户 ID: `{tid}`\n当前余额: `{user_points[tid]:.2f}`")
     except:
-        bot.reply_to(message, "💡 **使用格式错误！**\n请发送：`/add 用户ID 积分` \n例如：`/add 6649617045 10`", parse_mode='Markdown')
+        bot.reply_to(message, "💡 **使用格式错误！**\n请发送：`/add 用户ID 积分`", parse_mode='Markdown')
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
@@ -206,17 +200,15 @@ def start_cmd(message):
 
 @bot.message_handler(commands=['pl'])
 def pl_cmd(message):
-    chat_id = message.chat.id
     if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足 2.5！")
-    user_states[chat_id] = {'step': 'v_name'}
-    bot.send_message(chat_id, "请输入姓名：")
+    user_states[message.chat.id] = {'step': 'v_name'}
+    bot.send_message(message.chat.id, "请输入姓名：")
 
 @bot.message_handler(commands=['bq'])
 def bq_cmd(message):
-    chat_id = message.chat.id
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
-    user_states[chat_id] = {'step': 'g_card'}
-    bot.send_message(chat_id, "请输入身份证号（未知用x）：")
+    user_states[message.chat.id] = {'step': 'g_card'}
+    bot.send_message(message.chat.id, "请输入身份证号（未知用x）：")
 
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
@@ -227,16 +219,12 @@ def cmd_2ys(message):
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
-
-    # 自动识别“姓名 身份证”单次查询
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
-
     state = user_states.get(chat_id)
     if not state: return
-
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
         bot.send_message(chat_id, f"✅ 记录姓名：{text}\n请发送身份证列表：")
@@ -271,8 +259,19 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        bot.edit_message_text("🛠️️使用帮助\n批量核验: /pl (2.5积分)\n补齐查询: /bq (0.5积分)\n单次核验: /2ys 或直接发 姓名 身份证 (0.5积分)", 
-                             call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
+        # 此处完全按照您的最新要求修改内容
+        help_text = (
+            "🛠️️使用帮助\n"
+            "发送 /pl 进行批量二要素查询\n"
+            "每次查询扣除 2.5 积分\n"
+            "——————————————————\n"
+            "发送 /bq 进行补齐身份证查询\n"
+            "每次补齐扣除 0.5 积分\n"
+            "——————————————————\n"
+            "发送 /2ys 进行单次二要素核验\n"
+            "每次核验扣除 0.5 积分"
+        )
+        bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
         bot.edit_message_text("🛍️ 请选择充值方式：\n1 USDT = 1 积分", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
     elif call.data == "back_to_main":
