@@ -190,14 +190,14 @@ def add_points_cmd(message):
         save_points()
         bot.reply_to(message, f"✅ 已充值！\n用户 ID: `{tid}`\n当前余额: `{user_points[tid]:.2f}`")
     except:
-        bot.reply_to(message, "💡 **使用格式错误！**\n请发送：`/add 用户ID 积分`", parse_mode='Markdown')
+        bot.reply_to(message, "**使用格式错误！**\n请发送：`/add 用户ID 积分`", parse_mode='Markdown')
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: 
         bot.reply_to(message, "🤡你没有权限使用该指令…")
         return
-    msg = bot.reply_to(message, "🗝 **请输入新的批量核验 X-Token：**")
+    msg = bot.reply_to(message, "**请输入X-Token：**")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
 @bot.message_handler(commands=['start'])
@@ -221,7 +221,7 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
-    bot.send_message(message.chat.id, "💡 请输入：**姓名 身份证号**", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
