@@ -89,7 +89,7 @@ def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
     return (
-        f"Admin[@铭]\n\n"
+        f"Admin[@aaSm68](https://t.me/aaSm68)\n\n"
         f"用户 ID: `{uid}`\n"
         f"用户名称: `{first_name}`\n"
         f"用户名: {username}\n"
@@ -118,13 +118,19 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     }
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
+        
+        # 重点修改：只要接口有返回，无论成功还是失败，均扣除 0.5 积分
+        user_points[uid] -= 0.5
+        save_points()
+        
         if r.status_code == 200 and r.json().get("success"):
-            user_points[uid] -= 0.5; save_points()
             res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素核验一致✅**\n\n"
                    f"已扣除 **0.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
         else:
-            res = f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素验证失败❌**"
-    except: res = "❌ 接口请求失败"
+            res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素验证失败❌**\n\n"
+                   f"已扣除 **0.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
+    except: 
+        res = "❌ 接口请求失败"
     bot.send_message(chat_id, res, parse_mode='Markdown')
 
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
@@ -197,7 +203,7 @@ def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: 
         bot.reply_to(message, "🤡你没有权限使用该指令…")
         return
-    msg = bot.reply_to(message, "**请输入X-Token：**")
+    msg = bot.reply_to(message, "**请输入新的批量核验 X-Token：**")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
 @bot.message_handler(commands=['start'])
@@ -221,7 +227,7 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
-    bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "💡 请输入：**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -248,12 +254,10 @@ def handle_all(message):
         user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
         bot.send_message(chat_id, "请输入性别 (男/女):")
     elif state['step'] == 'g_sex':
-        # 修复此处的语法逻辑，确保三元运算和列表推导式正确
         user_points[uid] -= 0.5; save_points()
         base_17 = state['card'][:17]
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
         
-        # 修正性别过滤逻辑
         if text == "男":
             char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
         else:
@@ -262,7 +266,6 @@ def handle_all(message):
         ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
         generated_cache[uid] = ids
         
-        # 写入文件并发送
         with open("result.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(ids))
             
@@ -300,5 +303,4 @@ def handle_callback(call):
         bot.send_message(call.message.chat.id, "请输入姓名:"); user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
 
 if __name__ == '__main__':
-    # 启用异常重连，防止 Railway 环境下网络波动导致进程结束
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
