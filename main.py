@@ -50,6 +50,8 @@ def save_points():
         json.dump({str(k): v for k, v in user_points.items()}, f)
 
 def save_token(new_tk):
+    global CURRENT_X_TOKEN
+    CURRENT_X_TOKEN = new_tk
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
@@ -82,9 +84,14 @@ def get_help_markup():
     return types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
 
 def get_main_text(source, uid, pts):
+    # 恢复详细菜单内容（包含用户名称和用户名）
+    first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
+    username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
     return (
         f"Welcome to use！\n\n"
         f"用户 ID: `{uid}`\n"
+        f"用户名称: `{first_name}`\n"
+        f"用户名: {username}\n"
         f"当前余额: `{pts:.2f}积分`\n\n"
         f"使用帮助可查看使用教程\n"
         f"在线充值可支持24小时\n"
@@ -126,30 +133,36 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
     total, done = len(id_list), 0
     success_match, is_running = None, True
+    lock = threading.Lock()
 
     # 进度条监控线程
     def progress_monitor():
         nonlocal done, is_running
         while is_running:
             time.sleep(3)
-            try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(done, total))
+            with lock:
+                current_done = done
+            try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(current_done, total))
             except: pass
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
     def verify(id_no):
         nonlocal done, success_match, is_running
-        if success_match: return
+        if not is_running: return
         try:
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                user_points[uid] -= 2.5; save_points()
-                success_match = (f"✅ **核验成功！**\n\n**{name} {id_no}** 二要素核验一致✅\n\n"
-                                f"已扣除 **2.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
-                is_running = False
+                with lock:
+                    if is_running:
+                        user_points[uid] -= 2.5; save_points()
+                        success_match = (f"✅ **核验成功！**\n\n**{name} {id_no}** 二要素核验一致✅\n\n"
+                                        f"已扣除 **2.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
+                        is_running = False
         except: pass
-        finally: done += 1
+        finally:
+            with lock: done += 1
 
     with ThreadPoolExecutor(max_workers=10) as ex:
         ex.map(verify, id_list)
@@ -208,7 +221,7 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
-    bot.send_message(message.chat.id, "请输入：**姓名 身份证号**\n例如：`张三 110101199001011234`", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "请输入：**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
