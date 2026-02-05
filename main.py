@@ -295,7 +295,7 @@ def handle_callback(call):
             "——————————————————\n"
             "单次二要素核验\n"
             "发送 /2ys 进行核验\n"
-            "全天24h秒出 假1陪10000\n"
+            "全天24h秒出 毫秒级响应\n"
             "每次核验扣除 0.5 积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
