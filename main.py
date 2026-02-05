@@ -89,7 +89,7 @@ def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
     return (
-        f"Admin[@aaSm68](https://t.me/aaSm68)\n\n"
+        f"Admin@铭\n\n"
         f"用户 ID: `{uid}`\n"
         f"用户名称: `{first_name}`\n"
         f"用户名: {username}\n"
