@@ -96,7 +96,6 @@ def hb_search_logic(chat_id, search_value, uid):
             if "error" in result_data:
                 bot.send_message(chat_id, result_data["error"])
             elif "page" in result_data and result_data["page"]:
-                # 扣费逻辑：按帮助文案扣除 5.5
                 user_points[uid] -= 5.5
                 save_points()
 
@@ -244,7 +243,9 @@ def admin_cmd(message):
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID: 
+        bot.reply_to(message, "🤡你没有权限使用该指令…")
+        return
     try:
         parts = message.text.split()
         if len(parts) != 3: raise ValueError
@@ -256,7 +257,9 @@ def add_points_cmd(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID: 
+        bot.reply_to(message, "🤡你没有权限使用该指令…")
+        return
     msg = bot.reply_to(message, "请输入X-Token：")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
