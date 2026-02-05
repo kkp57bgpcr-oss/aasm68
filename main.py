@@ -290,7 +290,7 @@ def handle_all_messages(message):
             generated_cache[uid] = ids 
             with open("铭.txt", "w") as f: f.write("\n".join(ids))
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (888用户免积分)", callback_data="start_verify_flow"))
+            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (SVIP用户免积分)", callback_data="start_verify_flow"))
             bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 `{len(ids)}` 个", reply_markup=markup)
         del user_states[chat_id]
 
