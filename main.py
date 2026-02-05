@@ -22,6 +22,8 @@ DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLC
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
 bot = telebot.TeleBot(API_TOKEN)
+user_points = {}
+CURRENT_X_TOKEN = DEFAULT_TOKEN
 user_states = {}
 generated_cache = {} 
 
@@ -170,12 +172,16 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID: 
+        bot.reply_to(message, "🤡你没有权限使用该指令…")
+        return
     bot.send_message(message.chat.id, "👑 **管理员控制台**\n\n`/add 用户ID 分数` (充值)\n`/set_token` (更换批量Token)", parse_mode='Markdown')
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID: 
+        bot.reply_to(message, "🤡你没有权限使用该指令…")
+        return
     try:
         parts = message.text.split()
         if len(parts) != 3: raise ValueError
@@ -188,7 +194,9 @@ def add_points_cmd(message):
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID: 
+        bot.reply_to(message, "🤡你没有权限使用该指令…")
+        return
     msg = bot.reply_to(message, "🗝 **请输入新的批量核验 X-Token：**")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
@@ -213,7 +221,7 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
-    bot.send_message(message.chat.id, "请输入：**姓名 身份证号**", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "💡 请输入：**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -259,7 +267,6 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        # 此处完全按照您的最新要求修改内容
         help_text = (
             "🛠️️使用帮助\n"
             "发送 /pl 进行批量二要素查询\n"
