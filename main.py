@@ -116,7 +116,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                status_line = "👤 用户状态：888 SVIP" if is_svip(uid) else "👤 用户状态：普通用户"
+                status_line = "👤 用户状态：SVIP会员" if is_svip(uid) else "👤 用户状态：普通用户"
                 success_match = (
                     f"✅ 核验成功！\n\n"
                     f"{name} {id_no} 二要素核验一致✅\n\n"
@@ -151,7 +151,7 @@ def start_cmd(message):
         save_points()
     user_states[message.chat.id] = {'step': 'v_name'}
     pts = user_points.get(uid, 0)
-    status = "888 SVIP" if is_svip(uid) else "普通用户"
+    status = "SVIP会员" if is_svip(uid) else "普通用户"
     menu_text = (
         f"👋 **欢迎使用铭核验机器人**\n\n"
         f"💰 积分: `{pts}`\n"
@@ -194,14 +194,14 @@ def add_svip_cmd(message):
         response_text = (
             f"✅ 授权成功！\n"
             f"用户: `{target_id}`\n"
-            f"级别: `888svip`\n"
+            f"级别: `svip会员`\n"
             f"到期时间: `{expiry_date}`\n\n"
-            f"恭喜您成为尊贵的888用户！"
+            f"恭喜您成为尊贵的SVIP用户！"
         )
         bot.reply_to(message, response_text, parse_mode='Markdown')
         
         try:
-            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的888用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
+            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的SVIP用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
         except: pass
         
     except:
