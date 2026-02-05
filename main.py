@@ -1,4 +1,4 @@
-import telebot # 确保是小写
+import telebot 
 import requests
 import time
 import re
@@ -16,7 +16,7 @@ ADMIN_ID = 6649617045
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
-SVIP_FILE = 'svip.json' # SVIP数据文件
+SVIP_FILE = 'svip.json' 
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -60,8 +60,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# 检查是否为有效SVIP
-def is_svip(uid):
+def is_vip(uid):
     uid_str = str(uid)
     if uid_str in svip_users:
         try:
@@ -116,11 +115,9 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                status_line = "👤 用户状态：SVIP会员" if is_svip(uid) else "👤 用户状态：普通用户"
                 success_match = (
                     f"✅ 核验成功！\n\n"
-                    f"{name} {id_no} 二要素核验一致✅\n\n"
-                    f"{status_line}"
+                    f"{name} {id_no} 二要素核验一致✅"
                 )
                 stop_signal, is_running = True, False
         except: pass
@@ -131,7 +128,6 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
 
     is_running = False
     
-    # 修改处：先删除进度条消息
     try:
         bot.delete_message(chat_id, msg_id)
     except: pass
@@ -149,17 +145,18 @@ def start_cmd(message):
     if uid not in user_points:
         user_points[uid] = 0
         save_points()
-    user_states[message.chat.id] = {'step': 'v_name'}
+    
     pts = user_points.get(uid, 0)
-    status = "SVIP会员" if is_svip(uid) else "普通用户"
+    
     menu_text = (
-        f"👋 **欢迎使用铭核验机器人**\n\n"
-        f"💰 积分: `{pts}`\n"
-        f"🌟 身份: `{status}`\n"
-        f"💸 核验: `100`\n"
-        f"🛠 生成: `50`\n"
-        f"👤 管理员: {ADMIN_USERNAME}\n\n"
-        f"📢 **当前模式：核验模式**\n请输入姓名开始，或发送 /gen 切换。"
+        f"Welcome to use!\n\n"
+        f"用户 ID: `{uid}`\n"
+        f"用户名称: `{message.from_user.first_name}`\n"
+        f"当前余额: `{pts} 积分`\n\n"
+        f"💸 核验消耗: `100 积分`\n"
+        f"🛠 生成消耗: `50 积分`\n\n"
+        f"📢 **当前模式：核验模式**\n"
+        f"请输入姓名开始，或发送 /gen 切换。"
     )
     bot.send_message(message.chat.id, menu_text, parse_mode='Markdown')
 
@@ -174,7 +171,7 @@ def admin_cmd(message):
         f"📊 总查询数: {TOTAL_QUERIES}\n\n"
         f"💡 管理指令：\n"
         f"`/add 用户ID 分数` (充值积分)\n"
-        f"`/svip 用户ID 天数` (授权SVIP)\n"
+        f"`/svip 用户ID 天数` (授权白名单免积分)\n"
         f"`/set_token` (更换接口Token)"
     )
     bot.send_message(message.chat.id, admin_text, parse_mode='Markdown')
@@ -186,26 +183,17 @@ def add_svip_cmd(message):
         return
     try:
         parts = message.text.split()
+        if len(parts) < 3: raise ValueError
         target_id, days = parts[1], int(parts[2])
         expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         svip_users[str(target_id)] = expiry_date
         save_svip()
-        
-        response_text = (
-            f"✅ 授权成功！\n"
-            f"用户: `{target_id}`\n"
-            f"级别: `svip会员`\n"
-            f"到期时间: `{expiry_date}`\n\n"
-            f"恭喜您成为尊贵的SVIP用户！"
-        )
-        bot.reply_to(message, response_text, parse_mode='Markdown')
-        
+        bot.reply_to(message, f"✅ 授权成功！\n用户: `{target_id}`\n有效期: `{days}天`", parse_mode='Markdown')
         try:
-            bot.send_message(target_id, f"🎉 恭喜您成为尊贵的SVIP用户！\n祝您在网络道路上一路长虹！\n到期时间：`{expiry_date}`", parse_mode='Markdown')
+            bot.send_message(target_id, f"🎉 权限已更新！\n祝您在网络道路上一路长虹！\n📅 到期时间：`{expiry_date}`", parse_mode='Markdown')
         except: pass
-        
     except:
-        bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`")
+        bot.reply_to(message, "❌ 格式错误：`/svip 用户ID 天数`", parse_mode='Markdown')
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
@@ -214,16 +202,14 @@ def add_points_cmd(message):
         return
     try:
         parts = message.text.split()
+        if len(parts) < 3: raise ValueError
         tid, amt = int(parts[1]), int(parts[2])
         user_points[tid] = user_points.get(tid, 0) + amt
         save_points()
-        
         bot.reply_to(message, f"✅ 充值成功！用户 `{tid}` 余额: `{user_points[tid]}`")
-        
         try:
             bot.send_message(tid, f"💰 **充值提醒**：管理员已为您充值 `{amt}` 积分，当前余额：`{user_points[tid]}`", parse_mode='Markdown')
         except: pass
-        
     except:
         bot.reply_to(message, "❌ 格式错误：`/add 用户ID 积分`")
 
@@ -255,20 +241,20 @@ def handle_all_messages(message):
 
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
-        bot.send_message(chat_id, f"✅ 已记录姓名：`{text}`\n请发送身份证：")
+        bot.send_message(chat_id, f"✅ 已记录姓名：`{text}`\n请发送身份证列表：")
         
     elif state['step'] == 'v_ids':
         v_ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if is_valid_id(i)]
         if v_ids:
-            if is_svip(uid) or user_points.get(uid, 0) >= 100:
-                if not is_svip(uid):
+            if is_vip(uid) or user_points.get(uid, 0) >= 100:
+                if not is_vip(uid):
                     user_points[uid] -= 100
                     save_points()
-                # 获取进度条消息
                 msg = bot.send_message(chat_id, get_ui_bar(0, len(v_ids)))
                 threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, state['name'], v_ids, uid)).start()
             else:
-                bot.send_message(chat_id, "❌ 积分不足（需100积分）。")
+                # 修改处：积分不足提示
+                bot.send_message(chat_id, "积分不足，请先充值！")
         del user_states[chat_id]
 
     elif state['step'] == 'g_card':
@@ -276,32 +262,36 @@ def handle_all_messages(message):
         bot.send_message(chat_id, "请输入性别 (男/女):")
 
     elif state['step'] == 'g_sex':
-        if not is_svip(uid) and user_points.get(uid, 0) < 50:
-            bot.send_message(chat_id, "❌ 积分不足（需50积分）。")
+        if not is_vip(uid) and user_points.get(uid, 0) < 50:
+            # 修改处：积分不足提示
+            bot.send_message(chat_id, "积分不足，请先充值！")
             return
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in state['card']]
         if text == "男": char_sets[16] = ["1", "3", "5", "7", "9"]
         elif text == "女": char_sets[16] = ["0", "2", "4", "6", "8"]
         ids = [num for res in itertools.product(*char_sets) if is_valid_id(num := "".join(res))][:5000]
         if ids:
-            if not is_svip(uid):
+            if not is_vip(uid):
                 user_points[uid] -= 50
                 save_points()
             generated_cache[uid] = ids 
             with open("铭.txt", "w") as f: f.write("\n".join(ids))
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (SVIP用户免积分)", callback_data="start_verify_flow"))
+            markup.add(types.InlineKeyboardButton(f"🚀 立即核验 (100积分)", callback_data="start_verify_flow"))
             bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 `{len(ids)}` 个", reply_markup=markup)
         del user_states[chat_id]
 
     elif state['step'] == 'v_name_after_gen':
         if uid in generated_cache:
-            if not is_svip(uid):
-                user_points[uid] -= 100
-                save_points()
-            # 获取进度条消息
-            msg = bot.send_message(chat_id, get_ui_bar(0, len(generated_cache[uid])))
-            threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, text, generated_cache[uid], uid)).start()
+            if is_vip(uid) or user_points.get(uid, 0) >= 100:
+                if not is_vip(uid):
+                    user_points[uid] -= 100
+                    save_points()
+                msg = bot.send_message(chat_id, get_ui_bar(0, len(generated_cache[uid])))
+                threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, text, generated_cache[uid], uid)).start()
+            else:
+                # 修改处：积分不足提示
+                bot.send_message(chat_id, "积分不足，请先充值！")
         del user_states[chat_id]
 
 @bot.callback_query_handler(func=lambda call: call.data == "start_verify_flow")
