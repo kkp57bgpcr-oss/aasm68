@@ -21,7 +21,6 @@ DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLC
 bot = telebot.TeleBot(API_TOKEN)
 user_states = {}
 generated_cache = {} 
-TOTAL_QUERIES = 0
 
 # --- 数据持久化 ---
 def load_data():
@@ -32,7 +31,6 @@ def load_data():
                 data = json.load(f)
                 pts = {int(k): float(v) for k, v in data.items()}
         except: pass
-    
     tk = DEFAULT_TOKEN
     if os.path.exists(TOKEN_FILE):
         try:
@@ -52,7 +50,18 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 界面构建 =================
+# --- 身份证校验码核心算法 ---
+def get_id_check_code(id17):
+    """根据身份证前17位计算第18位校验码"""
+    if len(id17) != 17: return ""
+    factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+    rem_map = {0: '1', 1: '0', 2: 'X', 3: '9', 4: '8', 5: '7', 6: '6', 7: '5', 8: '4', 9: '3', 10: '2'}
+    try:
+        sum_val = sum(int(id17[i]) * factors[i] for i in range(17))
+        return rem_map[sum_val % 11]
+    except: return ""
+
+# ================= 2. 界面构建与逻辑 =================
 
 def get_main_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -60,44 +69,13 @@ def get_main_markup():
                types.InlineKeyboardButton("在线充值", callback_data="view_pay"))
     return markup
 
-def get_pay_markup():
-    admin_url = f"https://t.me/{ADMIN_USERNAME.replace('@', '')}"
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("USDT 充值", url=admin_url),
-               types.InlineKeyboardButton("OkPay 充值", url=admin_url),
-               types.InlineKeyboardButton("RMB 充值", url=admin_url),
-               types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
-    return markup
-
-def get_help_markup():
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
-    return markup
-
-def get_main_text(source, uid, pts):
-    first_name = source.from_user.first_name
-    uname = f"@{source.from_user.username}" if source.from_user.username else "未设置"
-    return (
-        f"Welcome to use！\n\n"
-        f"用户 ID: `{uid}`\n"
-        f"用户名称: `{first_name}`\n"
-        f"用户名: {uname}\n"
-        f"当前余额: `{pts:.2f}积分`\n\n"
-        f"使用帮助可查看使用教程\n"
-        f"在线充值可支持24小时\n"
-        f"1 USDT = 1 积分"
-    )
-
-# ================= 3. 核心核验逻辑 =================
-
 def get_ui_bar(done, total):
     percent = int(done / total * 100) if total > 0 else 0
     bar = "█" * int(16 * done // total) + "░" * (16 - int(16 * done // total))
     return f"⌛ 开始核验...\n[{bar}] {done}/{total} {percent}%"
 
+# --- 核心核验任务 ---
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
-    global TOTAL_QUERIES
-    TOTAL_QUERIES += 1
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
     total, done = len(id_list), 0
     success_match, is_running, stop_signal = None, True, False
@@ -131,82 +109,40 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ 核验完成，未发现匹配结果。")
 
-# ================= 4. 指令与回调逻辑 =================
-
-@bot.message_handler(commands=['admin'])
-def admin_cmd(message):
-    if message.from_user.id != ADMIN_ID: return
-    admin_text = (
-        f"👑 **管理员控制台**\n\n"
-        f"💡 指令列表：\n"
-        f"`/add 用户ID 分数` (充值积分)\n"
-        f"`/set_token` (更换接口Token)"
-    )
-    bot.send_message(message.chat.id, admin_text, parse_mode='Markdown')
+# ================= 3. 指令处理 =================
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: return
     msg = bot.reply_to(message, "🗝 **请输入新的 X-Token：**")
-    bot.register_next_step_handler(msg, process_token_update)
-
-def process_token_update(message):
-    global CURRENT_X_TOKEN
-    CURRENT_X_TOKEN = message.text.strip()
-    save_token(CURRENT_X_TOKEN)
-    bot.send_message(message.chat.id, "✅ **接口 Token 已成功更新！**")
+    bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token更新成功")])
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
     if message.from_user.id != ADMIN_ID: return
     try:
-        parts = message.text.split()
-        tid, amt = int(parts[1]), float(parts[2])
-        user_points[tid] = user_points.get(tid, 0.0) + amt
+        _, tid, amt = message.text.split()
+        user_points[int(tid)] = user_points.get(int(tid), 0.0) + float(amt)
         save_points()
-        bot.reply_to(message, f"✅ 已充值！用户 `{tid}` 余额: `{user_points[tid]:.2f}`")
+        bot.reply_to(message, f"✅ 充值成功！当前余额: `{user_points[int(tid)]}`")
     except: bot.reply_to(message, "格式：`/add 用户ID 积分`")
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
-    if uid not in user_points: user_points[uid] = 0.0
-    save_points()
-    bot.send_message(message.chat.id, get_main_text(message, uid, user_points[uid]), 
-                     parse_mode='Markdown', reply_markup=get_main_markup())
-
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
-    
-    if call.data == "view_help":
-        text = "🛠️️使用帮助\n批量二要素查询\n发送 /pl 进行查询\n每次查询扣除 2.5 积分\n" \
-               "——————————————————\n身份证补齐查询\n发送 /bq 进行查询\n每次查询扣除 0.5 积分"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
-    
-    elif call.data == "view_pay":
-        text = "🛍️购买积分说明：\n\n优先推荐使用OkPay付款\nUSDT（trc20）购买积分\n充值兑换积分比例为：1u=1积分\n\n请选择充值积分方式："
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
-    
-    elif call.data == "back_to_main":
-        bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, 
-                             parse_mode='Markdown', reply_markup=get_main_markup())
-                             
-    elif call.data == "start_verify_flow":
-        bot.send_message(call.message.chat.id, "请输入姓名:")
-        user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
+    pts = user_points.get(uid, 0.0)
+    text = f"Welcome to use!\n\n用户 ID: `{uid}`\n当前余额: `{pts:.2f}积分`"
+    bot.send_message(message.chat.id, text, parse_mode='Markdown', reply_markup=get_main_markup())
 
 @bot.message_handler(commands=['pl'])
 def pl_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 2.5:
-        return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足！")
     user_states[message.chat.id] = {'step': 'v_name'}
     bot.send_message(message.chat.id, "请输入姓名：")
 
 @bot.message_handler(commands=['bq'])
 def bq_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5:
-        return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足！")
     user_states[message.chat.id] = {'step': 'g_card'}
     bot.send_message(message.chat.id, "请输入身份证号（未知用x）：")
 
@@ -216,10 +152,12 @@ def handle_all(message):
     state = user_states.get(chat_id)
     if not state or text.startswith('/'): return
 
+    # --- 批量核验：姓名 ---
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
         bot.send_message(chat_id, f"✅ 记录姓名：{text}\n请发送身份证列表：")
         
+    # --- 批量核验：列表 ---
     elif state['step'] == 'v_ids':
         ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if len(i)==18]
         if ids:
@@ -228,21 +166,38 @@ def handle_all(message):
             threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, state['name'], ids, uid)).start()
         del user_states[chat_id]
 
+    # --- 身份证生成：号码 ---
     elif state['step'] == 'g_card':
         user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
         bot.send_message(chat_id, "请输入性别 (男/女):")
 
+    # --- 身份证生成：性别与算法核心 ---
     elif state['step'] == 'g_sex':
         user_points[uid] -= 0.5; save_points()
-        char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in state['card']]
-        if text == "男": char_sets[16] = ["1","3","5","7","9"]
-        else: char_sets[16] = ["0","2","4","6","8"]
-        ids = ["".join(res) for res in itertools.product(*char_sets)][:5000]
-        generated_cache[uid] = ids
-        with open("铭.txt", "w") as f: f.write("\n".join(ids))
+        raw_card = state['card']
+        
+        # 1. 前17位穷举逻辑
+        base_17 = raw_card[:17]
+        char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
+        
+        # 性别位过滤（第17位）
+        if text == "男": char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
+        else: char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
+        
+        # 2. 生成组合并计算校验码
+        valid_ids = []
+        for res in itertools.product(*char_sets):
+            s17 = "".join(res)
+            check_code = get_id_check_code(s17) # 调用算法
+            valid_ids.append(s17 + check_code)
+        
+        valid_ids = valid_ids[:5000]
+        generated_cache[uid] = valid_ids
+        
+        with open("铭.txt", "w") as f: f.write("\n".join(valid_ids))
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
-        bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
+        bot.send_document(chat_id, open("铭.txt", "rb"), caption=f"✅ 生成成功！共 {len(valid_ids)} 个合法号码", reply_markup=markup)
         del user_states[chat_id]
 
     elif state['step'] == 'v_name_after_gen':
@@ -251,6 +206,12 @@ def handle_all(message):
             msg = bot.send_message(chat_id, get_ui_bar(0, len(generated_cache[uid])))
             threading.Thread(target=run_batch_task, args=(chat_id, msg.message_id, text, generated_cache[uid], uid)).start()
         del user_states[chat_id]
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    if call.data == "start_verify_flow":
+        bot.send_message(call.message.chat.id, "请输入姓名:")
+        user_states[call.message.chat.id] = {'step': 'v_name_after_gen'}
 
 if __name__ == '__main__':
     bot.infinity_polling()
