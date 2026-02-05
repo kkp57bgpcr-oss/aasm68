@@ -79,11 +79,11 @@ def get_pay_markup():
     markup.add(types.InlineKeyboardButton("USDT 充值", url=admin_url),
                types.InlineKeyboardButton("OkPay 充值", url=admin_url),
                types.InlineKeyboardButton("RMB 充值", url=admin_url),
-               types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
+               types.InlineKeyboardButton("🔙", callback_data="back_to_main"))
     return markup
 
 def get_help_markup():
-    return types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main"))
+    return types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙", callback_data="back_to_main"))
 
 def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
@@ -203,7 +203,7 @@ def set_token_cmd(message):
     if message.from_user.id != ADMIN_ID: 
         bot.reply_to(message, "🤡你没有权限使用该指令…")
         return
-    msg = bot.reply_to(message, "**请输入新的批量核验 X-Token：**")
+    msg = bot.reply_to(message, "请输入X-Token：")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
 @bot.message_handler(commands=['start'])
@@ -285,13 +285,17 @@ def handle_callback(call):
     if call.data == "view_help":
         help_text = (
             "🛠️️使用帮助\n"
-            "发送 /pl 进行批量二要素查询\n"
+            "批量二要素核验\n"
+            "发送 /pl 进行核验\n"
             "每次查询扣除 2.5 积分\n"
             "——————————————————\n"
-            "发送 /bq 进行补齐身份证查询\n"
+            "补齐身份证and核验\n"
+            "发送 /bq 进行查询\n"
             "每次补齐扣除 0.5 积分\n"
             "——————————————————\n"
-            "发送 /2ys 进行单次二要素核验\n"
+            "单次二要素核验\n"
+            "发送 /2ys 进行核验\n"
+            "全天24h秒出 假1陪10000\n"
             "每次核验扣除 0.5 积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
