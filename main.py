@@ -208,19 +208,19 @@ def start_cmd(message):
 
 @bot.message_handler(commands=['pl'])
 def pl_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足 2.5！")
+    if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
     user_states[message.chat.id] = {'step': 'v_name'}
     bot.send_message(message.chat.id, "请输入姓名：")
 
 @bot.message_handler(commands=['bq'])
 def bq_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
     user_states[message.chat.id] = {'step': 'g_card'}
     bot.send_message(message.chat.id, "请输入身份证号（未知用x）：")
 
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
     bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
@@ -229,7 +229,7 @@ def handle_all(message):
     if text.startswith('/'): return 
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
-        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足 0.5！")
+        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
     
     state = user_states.get(chat_id)
