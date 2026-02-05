@@ -52,9 +52,8 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# --- 新增：身份证校验码算法 ---
+# --- 身份证校验码算法 ---
 def get_id_check_code(id17):
-    """计算身份证第18位校验码"""
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
     rem_map = {0: '1', 1: '0', 2: 'X', 3: '9', 4: '8', 5: '7', 6: '6', 7: '5', 8: '4', 9: '3', 10: '2'}
     try:
@@ -129,7 +128,13 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             payload = {"id_type": "id_card", "mobile": "15555555555", "id_no": id_no, "name": name}
             r = requests.post("https://wxxcx.cdcypw.cn/wechat/visitor/create", json=payload, headers=headers, timeout=5)
             if r.json().get("code") == 0:
-                success_match = f"✅ 核验成功！\n\n{name} {id_no} 二要素核验一致✅"
+                current_pts = user_points.get(uid, 0.0)
+                success_match = (
+                    f"✅ **核验成功！**\n\n"
+                    f"**{name} {id_no}** 二要素核验一致✅\n\n"
+                    f"已扣除 **2.5** 积分！\n"
+                    f"当前积分余额：**{current_pts:.2f}** 积分"
+                )
                 stop_signal, is_running = True, False
         except: pass
         finally: done += 1
@@ -140,7 +145,11 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     is_running = False
     try: bot.delete_message(chat_id, msg_id)
     except: pass
-    bot.send_message(chat_id, success_match if success_match else "❌ 核验完成，未发现匹配结果。")
+    
+    if success_match:
+        bot.send_message(chat_id, success_match, parse_mode='Markdown')
+    else:
+        bot.send_message(chat_id, "❌ **核验完成，未发现匹配结果。**", parse_mode='Markdown')
 
 # ================= 4. 指令与回调逻辑 =================
 
@@ -245,25 +254,20 @@ def handle_all(message):
 
     elif state['step'] == 'g_sex':
         user_points[uid] -= 0.5; save_points()
-        # --- 补齐算法修改部分 ---
-        base_17_pattern = state['card'][:17] # 只取前17位处理
+        # 补齐算法逻辑
+        base_17_pattern = state['card'][:17]
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17_pattern]
-        
-        # 处理性别位逻辑 (第17位)
         if text == "男": 
             char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
         else: 
             char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
         
-        # 生成前17位组合，并根据算法自动生成合法的第18位
         valid_ids = []
         for res in itertools.product(*char_sets):
             id17 = "".join(res)
-            full_id = id17 + get_id_check_code(id17)
-            valid_ids.append(full_id)
+            valid_ids.append(id17 + get_id_check_code(id17))
             
-        ids = valid_ids[:5000] # 依然保留安全限制
-        # -----------------------
+        ids = valid_ids[:5000]
         generated_cache[uid] = ids
         with open("铭.txt", "w") as f: f.write("\n".join(ids))
         markup = types.InlineKeyboardMarkup()
