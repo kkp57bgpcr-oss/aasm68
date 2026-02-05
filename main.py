@@ -6,6 +6,8 @@ import threading
 import json
 import os
 import itertools
+import binascii
+from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +20,6 @@ POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
-# 单次二要素固定 Token (接口 B)
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -57,6 +58,58 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
+# ================= 2. 河北解密逻辑 (新增) =================
+
+def decrypt_data(encrypted_text_hex, key):
+    try:
+        ciphertext = binascii.unhexlify(encrypted_text_hex)
+        key = binascii.unhexlify(key)
+        cipher = DES3.new(key, DES3.MODE_ECB)
+        decrypted_data = cipher.decrypt(ciphertext)
+        try:
+            decoded_data = decrypted_data.decode('utf-8', errors='ignore')
+            return json.loads(decoded_data)
+        except ValueError:
+            invalid_chars = [b'\0', b'\x01', b'\x02', b'\x03', b'\x04', b'\x05', b'\x06', b'\x07', b'\x08', b'\x09', b'\x0a', b'\x0b', b'\x0c', b'\x0d', b'\x0e', b'\x0f',
+                             b'\x10', b'\x11', b'\x12', b'\x13', b'\x14', b'\x15', b'\x16', b'\x17', b'\x18', b'\x19', b'\x1a', b'\x1b', b'\x1c', b'\x1d', b'\x1e', b'\x1f']
+            for char in invalid_chars:
+                decrypted_data = decrypted_data.replace(char, b'')
+            decoded_data = decrypted_data.decode('utf-8', errors='ignore')
+            return json.loads(decoded_data)
+    except (binascii.Error, ValueError, json.JSONDecodeError) as e:
+        return {"error": str(e)}
+
+def hb_search_logic(chat_id, search_value, uid):
+    url = "https://api.91jkj.com/residentshealth"
+    headers = {
+        "ACTION": "CM019", "LONGITUDE": "114.900015", "SESSION_ID": "7B243BE72768807FD09C55B8763BDBCB",
+        "LATITUDE": "26.796795", "Connection": "Keep-Alive", "ORDER_YYFSDM": "1", "SOURCE": "1",
+        "isEncrypt": "1", "Content-Type": "application/x-www-form-urlencoded", "Host": "api.91jkj.com",
+        "Accept-Encoding": "gzip", "Cookie": "acw_tc=0bd17c6617316858716663239e5577a2ed3657cc2b8ad00f782bcd8f9d741a", "User-Agent": "okhttp/3.14.9"
+    }
+    try:
+        response = requests.post(url, data={"search": search_value}, headers=headers)
+        result_json = json.loads(response.text)
+        encrypted_text_hex = result_json.get('data')
+        if encrypted_text_hex:
+            result_data = decrypt_data(encrypted_text_hex, '26556e9bb82743358da7860606b8f29626556e9bb8274335')
+            if "error" in result_data:
+                bot.send_message(chat_id, result_data["error"])
+            elif "page" in result_data and result_data["page"]:
+                user_points[uid] -= 0.5; save_points() # 扣费逻辑
+                result_message = "✅河北全户查询结果:\n"
+                for item in result_data["page"]:
+                    result_message += f"姓名:{item['resName']}\n证件:{item['sfcode']}\n手机:{item['mobile']}\n地址:{item['address']}\n\n"
+                bot.send_message(chat_id, result_message.strip())
+            else:
+                bot.send_message(chat_id, "查询为空")
+        else:
+            bot.send_message(chat_id, "响应中data字段为空")
+    except:
+        bot.send_message(chat_id, "查询接口请求异常")
+
+# ================= 3. 辅助功能 =================
+
 def get_id_check_code(id17):
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
     rem_map = {0: '1', 1: '0', 2: 'X', 3: '9', 4: '8', 5: '7', 6: '6', 7: '5', 8: '4', 9: '3', 10: '2'}
@@ -64,8 +117,6 @@ def get_id_check_code(id17):
         sum_val = sum(int(id17[i]) * factors[i] for i in range(17))
         return rem_map[sum_val % 11]
     except: return "X"
-
-# ================= 2. 界面构建 =================
 
 def get_main_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -106,7 +157,7 @@ def get_ui_bar(done, total):
     bar = "█" * filled + "░" * (bar_len - filled)
     return f"⌛ 开始核验...\n[{bar}] {done}/{total} {percent}%"
 
-# ================= 3. 核验逻辑集成 =================
+# ================= 4. 核验逻辑 =================
 
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
@@ -118,11 +169,8 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     }
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
-        
-        # 重点修改：只要接口有返回，无论成功还是失败，均扣除 0.5 积分
         user_points[uid] -= 0.5
         save_points()
-        
         if r.status_code == 200 and r.json().get("success"):
             res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素核验一致✅**\n\n"
                    f"已扣除 **0.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
@@ -146,7 +194,6 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             with lock: current_done = done
             try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(current_done, total))
             except: pass
-
     threading.Thread(target=progress_monitor, daemon=True).start()
 
     def verify(id_no):
@@ -165,16 +212,19 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
         except: pass
         finally:
             with lock: done += 1
-
     with ThreadPoolExecutor(max_workers=10) as ex:
         ex.map(verify, id_list)
-    
     is_running = False
     try: bot.delete_message(chat_id, msg_id)
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 4. 指令与消息处理 =================
+# ================= 5. 指令与消息处理 =================
+
+@bot.message_handler(commands=['hb'])
+def hb_cmd(message):
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+    bot.send_message(message.chat.id, "请输入河北身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
@@ -185,9 +235,7 @@ def admin_cmd(message):
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    if message.from_user.id != ADMIN_ID: 
-        bot.reply_to(message, "🤡你没有权限使用该指令…")
-        return
+    if message.from_user.id != ADMIN_ID: return
     try:
         parts = message.text.split()
         if len(parts) != 3: raise ValueError
@@ -195,14 +243,11 @@ def add_points_cmd(message):
         user_points[tid] = user_points.get(tid, 0.0) + amt
         save_points()
         bot.reply_to(message, f"✅ 已充值！\n用户 ID: `{tid}`\n当前余额: `{user_points[tid]:.2f}`")
-    except:
-        bot.reply_to(message, "**使用格式错误！**\n请发送：`/add 用户ID 积分`", parse_mode='Markdown')
+    except: pass
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    if message.from_user.id != ADMIN_ID: 
-        bot.reply_to(message, "🤡你没有权限使用该指令…")
-        return
+    if message.from_user.id != ADMIN_ID: return
     msg = bot.reply_to(message, "请输入X-Token：")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
@@ -227,12 +272,18 @@ def bq_cmd(message):
 @bot.message_handler(commands=['2ys'])
 def cmd_2ys(message):
     if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
-    bot.send_message(message.chat.id, "💡 请输入：**姓名 身份证号**", parse_mode='Markdown')
+    bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
+    
+    # 手机号或身份证号直接识别（HB查询）
+    if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
+        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+        return hb_search_logic(chat_id, text, uid)
+
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
@@ -257,21 +308,13 @@ def handle_all(message):
         user_points[uid] -= 0.5; save_points()
         base_17 = state['card'][:17]
         char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
-        
-        if text == "男":
-            char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
-        else:
-            char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
-            
+        if text == "男": char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
+        else: char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
         ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
         generated_cache[uid] = ids
-        
-        with open("result.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(ids))
-            
+        with open("result.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
-        with open("result.txt", "rb") as f:
-            bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
+        with open("result.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
         del user_states[chat_id]
     elif state['step'] == 'v_name_after_gen':
         if uid in generated_cache:
@@ -295,8 +338,13 @@ def handle_callback(call):
             "——————————————————\n"
             "单次二要素核验\n"
             "发送 /2ys 进行核验\n"
-            "全天24h秒出 毫秒级响应\n"
+            "全天24h开放 毫秒级响应\n"
             "每次核验扣除 0.5 积分"
+            "——————————————————\n"
+            "河北全户查询\n"
+            "发送 /hb 进行查询\n"
+            "全天24h秒出 假1赔10000\n"
+            "每次查询扣除5.5积分\n"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
