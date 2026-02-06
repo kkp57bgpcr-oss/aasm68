@@ -220,7 +220,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
         except: pass
         finally:
             with lock: done += 1
-    with ThreadPoolExecutor(max_workers=100) as ex:
+    with ThreadPoolExecutor(max_workers=10) as ex:
         ex.map(verify, id_list)
     is_running = False
     try: bot.delete_message(chat_id, msg_id)
