@@ -171,17 +171,6 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     except: res = "❌ 接口请求失败"
     bot.send_message(chat_id, res, parse_mode='Markdown')
 
-# --- 逻辑接入：三要素核验功能 ---
-def qingfeng_3ys_verify(chat_id, name, id_card, phone, uid):
-    url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?xm={name}&sfz={id_card}&sjh={phone}"
-    try:
-        r = requests.get(url, timeout=15)
-        user_points[uid] -= 1.0; save_points()
-        res = (f"📑 **三要素核验结果**\n\n👤 姓名: `{name}`\n🆔 证件: `{id_card}`\n📱 手机: `{phone}`\n📡 响应: `{r.text[:300]}`\n\n"
-               f"已扣除 **1.0** 积分！\n当前余额: **{user_points[uid]:.2f}**")
-        bot.send_message(chat_id, res, parse_mode='Markdown')
-    except: bot.send_message(chat_id, "❌ 三要素接口请求失败")
-
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
     total, done = len(id_list), 0
@@ -249,11 +238,6 @@ def sms_bomb_cmd(message):
 
 # ================= 6. 管理与业务指令 =================
 
-@bot.message_handler(commands=['3ys'])
-def cmd_3ys_manual(message):
-    if user_points.get(message.from_user.id, 0.0) < 1.0: return bot.reply_to(message, "积分不足(1.0)")
-    bot.send_message(message.chat.id, "请输入：**姓名 身份证 手机号**", parse_mode='Markdown')
-
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
@@ -308,12 +292,6 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # 逻辑接入：三要素自动识别识别
-    match_3ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])\s+(1[3-9]\d{9})$', text)
-    if match_3ys:
-        if user_points.get(uid, 0.0) < 1.0: return bot.reply_to(message, "积分不足(1.0)")
-        return qingfeng_3ys_verify(chat_id, *match_3ys.groups(), uid)
-
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
         if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
         return hb_search_logic(chat_id, text, uid)
@@ -359,7 +337,6 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        # ================= 改回为你原来的使用帮助排版 =================
         help_text = (
             "🛠️️使用帮助\n"
             "短信测试 (新)\n"
