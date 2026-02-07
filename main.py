@@ -111,7 +111,7 @@ def hb_search_logic(chat_id, search_value, uid):
                     result_message += f"手机:{item['mobile']}\n"
                     result_message += f"地址:{item['address']}\n\n"
                 
-                result_message += f"已扣除 **5.5** 积分！\n"
+                result_message += f"已扣除 **3.5** 积分！\n"
                 result_message += f"当前积分余额：**{user_points[uid]:.2f}** 积分"
                 bot.send_message(chat_id, result_message.strip(), parse_mode='Markdown')
             else:
@@ -283,7 +283,7 @@ def sms_bomb_cmd(message):
 
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['admin'])
