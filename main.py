@@ -11,7 +11,8 @@ import random
 import concurrent.futures
 import inspect  # 新增：用于深度扫描接口
 import sms_list 
-from sms_list import * from Crypto.Cipher import DES3
+from sms_list import * 
+from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
