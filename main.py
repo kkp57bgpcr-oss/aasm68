@@ -63,7 +63,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 解密逻辑 =================
+# ================= 2. 解密与查询逻辑 =================
 
 def decrypt_data(encrypted_text_hex, key):
     try:
@@ -83,6 +83,24 @@ def decrypt_data(encrypted_text_hex, key):
             return json.loads(decoded_data)
     except (binascii.Error, ValueError, json.JSONDecodeError) as e:
         return {"error": str(e)}
+
+# --- 新加：cyh 接口逻辑 ---
+def xiaowunb_query_logic(chat_id, id_number, uid):
+    base_url = "http://xiaowunb.top/cyh.php"
+    params = {"sfz": id_number}
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        response.encoding = 'utf-8'
+        
+        # 扣除 2.5 积分
+        user_points[uid] -= 2.5
+        save_points()
+        
+        res_text = response.text if response.text.strip() else "查询结果为空"
+        result_message = f"📑 **身份查询结果**\n\n{res_text}\n\n已扣除 **2.5** 积分！\n当前余额: **{user_points[uid]:.2f}**"
+        bot.send_message(chat_id, result_message, parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
 
 def hb_search_logic(chat_id, search_value, uid):
     url = "https://api.91jkj.com/residentshealth"
@@ -238,6 +256,13 @@ def sms_bomb_cmd(message):
 
 # ================= 6. 管理与业务指令 =================
 
+@bot.message_handler(commands=['cyh'])
+def cyh_cmd(message):
+    uid = message.from_user.id
+    if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)！")
+    user_states[message.chat.id] = {'step': 'cyh_id'}
+    bot.send_message(message.chat.id, "请输入要查询的身份证号：")
+
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
@@ -292,7 +317,14 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
+    # 逻辑识别：如果是直接发身份证/手机号 (默认跑河北查询)
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
+        # 检查是否处于 cyh 指令的下一步状态
+        state = user_states.get(chat_id)
+        if state and state['step'] == 'cyh_id':
+            del user_states[chat_id]
+            return xiaowunb_query_logic(chat_id, text, uid)
+            
         if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
         return hb_search_logic(chat_id, text, uid)
 
@@ -339,7 +371,7 @@ def handle_callback(call):
     if call.data == "view_help":
         help_text = (
             "🛠️️使用帮助\n"
-            "短信测试 (新)\n"
+            "短信测压\n"
             "发送 /sms 手机号\n"
             "每次消耗 5.5 积分\n"
             "——————————————————\n"
@@ -354,6 +386,10 @@ def handle_callback(call):
             "单次二要素核验\n"
             "发送 /2ys 进行核验\n"
             "每次核验扣除 0.5 积分\n"
+            "——————————————————\n"
+            "常用号查询\n"
+            "发送 /cyh 进行查询\n"
+            "每次查询扣除 2.5 积分\n"
             "——————————————————\n"
             "河北全户查询\n"
             "发送 /hb 进行查询\n"
