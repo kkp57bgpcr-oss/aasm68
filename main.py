@@ -10,7 +10,8 @@ import binascii
 import random
 import concurrent.futures
 import sms_list  # 修改：更标准的导入方式
-from sms_list import * from Crypto.Cipher import DES3
+from sms_list import * 
+from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
