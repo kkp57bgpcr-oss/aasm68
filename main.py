@@ -9,10 +9,9 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-import inspect  # 核心：用于深度扫描接口
+import inspect  
 import sms_list 
-from sms_list import * 
-from Crypto.Cipher import DES3
+from sms_list import * from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +24,7 @@ POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
+# 这里的 AUTH_BEARER 建议定期检查是否失效
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -101,7 +101,8 @@ def hb_search_logic(chat_id, search_value, uid):
             if "error" in result_data:
                 bot.send_message(chat_id, result_data["error"])
             elif "page" in result_data and result_data["page"]:
-                user_points[uid] -= 5.5
+                # --- 修改点：hb查询积分改为 3.5 ---
+                user_points[uid] -= 3.5
                 save_points()
 
                 result_message = "✅查询结果:\n"
@@ -283,6 +284,7 @@ def sms_bomb_cmd(message):
 
 @bot.message_handler(commands=['hb'])
 def hb_cmd(message):
+    # --- 修改点：hb查询门槛改为 3.5 ---
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
@@ -344,7 +346,8 @@ def handle_all(message):
     if text.startswith('/'): return 
     
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        if user_points.get(uid, 0.0) < 5.5: return bot.reply_to(message, "积分不足，请先充值！")
+        # --- 修改点：hb查询判定积分改为 3.5 ---
+        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足，请先充值！")
         return hb_search_logic(chat_id, text, uid)
 
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
@@ -389,6 +392,7 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
+        # --- 修改点：帮助菜单里的 hb 提示改为 3.5 ---
         help_text = (
             "🛠️️使用帮助\n"
             "短信测试 (新)\n"
@@ -409,7 +413,7 @@ def handle_callback(call):
             "——————————————————\n"
             "河北全户查询\n"
             "发送 /hb 进行查询\n"
-            "每次查询扣除 5.5 积分\n"
+            "每次查询扣除 3.5 积分\n"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
