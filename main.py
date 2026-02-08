@@ -69,7 +69,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 解密函數 =================
+# ================= 2. 解密函数 =================
 
 def decrypt_data(encrypted_text_hex, key):
     try:
@@ -119,6 +119,28 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
+# ================= 二要素核验逻辑 =================
+
+def single_verify_2ys(chat_id, name, id_card, uid):
+    url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
+    headers = {
+        "Authorization": AUTH_BEARER, 
+        "Content-Type": "application/json", 
+        "User-Agent": "Mozilla/5.0", 
+        "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"
+    }
+    try:
+        r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
+        user_points[uid] -= 0.01
+        save_points()
+        # 修复：确保解析 JSON
+        res_json = r.json()
+        res_type = "二要素核验一致 ✅" if res_json.get("success") else f"二要素验证失败 ❌ ({res_json.get('message', '不一致')})"
+        res = (f"👤 **二要素核验**\n\n姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
+    except Exception as e:
+        res = f"❌ 接口请求失败: {str(e)}"
+    bot.send_message(chat_id, res, parse_mode='Markdown')
+
 # ================= 辅助功能 =================
 
 def get_id_check_code(id17):
@@ -158,20 +180,6 @@ def get_ui_bar(done, total):
     filled = int(bar_len * done // total) if total > 0 else 0
     bar = "█" * filled + "░" * (bar_len - filled)
     return f"⌛ 开始核验...\n[{bar}] {done}/{total} {percent}%"
-
-# ================= 核验业务 =================
-
-def single_verify_2ys(chat_id, name, id_card, uid):
-    url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
-    headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
-    try:
-        r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
-        user_points[uid] -= 0.01
-        save_points()
-        res_type = "二要素核验一致✅" if r.json().get("success") else "二要素验证失败❌"
-        res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
-    except: res = "❌ 接口请求失败"
-    bot.send_message(chat_id, res, parse_mode='Markdown')
 
 def run_batch_task(chat_id, msg_id, name, id_list, uid):
     headers = {"X-Token": CURRENT_X_TOKEN, "content-type": "application/json"}
@@ -267,16 +275,19 @@ def handle_commands(message):
         user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知用x）：")
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足(0.01)")
-        bot.send_message(chat_id, "请输入**姓名 身份证号**")
+        user_states[chat_id] = {'step': 'v_2ys'} # 修复：增加了状态设定
+        bot.send_message(chat_id, "请输入姓名 身份证")
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # 自动识别三要素和常用号
+    # --- 自动识别逻辑 (核心修复) ---
     if chat_id not in user_states or not user_states[chat_id].get('step'):
         parts = re.split(r'[,/\s]+', text.strip())
+        
+        # 1. 自动识别三要素 (3项)
         if len(parts) == 3:
             n, p, i = None, None, None
             for x in parts:
@@ -286,24 +297,54 @@ def handle_all(message):
             if n and p and i:
                 if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "❌ 积分不足(0.05)")
                 return query_3ys_logic(chat_id, n, i, p, uid)
+        
+        # 2. 自动识别二要素 (2项: 姓名 + 身份证)
+        if len(parts) == 2:
+            n, i = None, None
+            for x in parts:
+                if re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+                elif re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+            if n and i:
+                if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "❌ 积分不足(0.01)")
+                return single_verify_2ys(chat_id, n, i, uid)
+
+        # 3. 自动识别常用号 (单项: 身份证)
         if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
             if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "❌ 积分不足(1.5)")
             return xiaowunb_query_logic(chat_id, text, uid)
 
+    # --- 状态机处理逻辑 ---
     state = user_states.get(chat_id)
     if not state: return
     step = state['step']
     
-    if step == 'cyh_id': del user_states[chat_id]; return xiaowunb_query_logic(chat_id, text, uid)
-    elif step == 'v_name': user_states[chat_id].update({'step': 'v_ids', 'name': text}); bot.send_message(chat_id, f"✅ 姓名：{text}\n请发送身份证列表：")
+    if step == 'cyh_id': 
+        del user_states[chat_id]
+        return xiaowunb_query_logic(chat_id, text, uid)
+    
+    elif step == 'v_2ys': # 修复：处理 /2ys 后的输入
+        del user_states[chat_id]
+        parts = re.split(r'[,/\s]+', text.strip())
+        if len(parts) >= 2:
+            single_verify_2ys(chat_id, parts[0], parts[1].upper(), uid)
+        else:
+            bot.reply_to(message, "输入格式错误，请发送：`姓名 身份证号`")
+
+    elif step == 'v_name': 
+        user_states[chat_id].update({'step': 'v_ids', 'name': text})
+        bot.send_message(chat_id, f"✅ 姓名：{text}\n请发送身份证列表：")
+        
     elif step == 'v_ids':
         ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if len(i)==18]
         if ids:
             m = bot.send_message(chat_id, get_ui_bar(0, len(ids)))
             threading.Thread(target=run_batch_task, args=(chat_id, m.message_id, state['name'], ids, uid)).start()
         del user_states[chat_id]
+        
     elif step == 'g_card':
-        user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()}); bot.send_message(chat_id, "请输入性别 (男/女):")
+        user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
+        bot.send_message(chat_id, "请输入性别 (男/女):")
+        
     elif step == 'g_sex':
         user_points[uid] -= 0.1; save_points()
         base_17 = state['card'][:17]
@@ -316,6 +357,7 @@ def handle_all(message):
         markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("立即核验 (2.5积分)", callback_data="start_verify_flow"))
         with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！", reply_markup=markup)
         del user_states[chat_id]
+        
     elif step == 'v_name_after_gen':
         if uid in generated_cache:
             m = bot.send_message(chat_id, get_ui_bar(0, len(generated_cache[uid])))
@@ -330,8 +372,8 @@ def handle_callback(call):
             "🛠️️使用帮助\n短信测压\n发送 /sms 手机号\n每次消耗 3.5 积分\n——————————————————\n"
             "批量二要素核验\n发送 /pl 进行核验\n每次核验扣除 2.5 积分\n——————————————————\n"
             "补齐身份证and核验\n发送 /bq 进行操作\n每次补齐扣除 0.1 积分\n——————————————————\n"
-            "名字-身份证核验（企业级）\n发送 /2ys 进行核验\n每次核验扣除 0.01 积分\n——————————————————\n"
-            "名字-手机号-身份证核验（企业级）\n发送 /3ys 进行核验\n每次核验扣除 0.05 积分\n——————————————————\n"
+            "名字-身份证核验（二要素）\n发送 /2ys 进行核验\n每次核验扣除 0.01 积分\n——————————————————\n"
+            "名字-手机号-身份证核验（三要素）\n发送 /3ys 进行核验\n每次核验扣除 0.05 积分\n——————————————————\n"
             "常用号查询\n发送 /cyh 进行查询\n每次查询扣除 1.5 积分 空不扣除积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
