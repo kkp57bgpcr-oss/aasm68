@@ -19,7 +19,7 @@ from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
 
-# 屏蔽 SSL 证书报警，保持后台整洁
+# 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -33,16 +33,11 @@ DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLC
 
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
-# 人脸核验 Token（请确保此 Token 有效）
-RL_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViMDQ2LWI1NzYtNGJlNi05MGVhLTllY2YxNGNiMjI4MiJ9.fIUe4cTbOnK-l68a8cF44glMCd32sWxphcftKah6d9PK4PAo7vV9AdJOByZMt_X8YouKC6cb0_R_IUOgUBNMFg"
-
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
 CURRENT_X_TOKEN = DEFAULT_TOKEN
 user_states = {}
 generated_cache = {} 
-
-RLHY_POINTS_COST = 0.1
 
 # --- 数据持久化 ---
 def load_data():
@@ -123,73 +118,6 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         bot.send_message(chat_id, message, parse_mode='Markdown')
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
-
-# ================= 人脸核验逻辑 (核心修复) =================
-
-def single_rlhy_verify(chat_id, name, id_card, pic_url, uid):
-    url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
-    
-    # 清理 Token 格式，确保只带一个 Bearer 前缀
-    clean_token = RL_AUTH_TOKEN.replace("Bearer ", "").strip()
-    
-    headers = {
-        "Authorization": f"Bearer {clean_token}",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x1800282c) NetType/WIFI Language/zh_CN",
-        "Referer": "https://servicewechat.com/wx2d2597151b9e8347/12/page-frame.html",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-        "X-Requested-With": "com.tencent.mm"
-    }
-
-    payload = {
-        "carrierUser": {
-            "identityCard": id_card,
-            "nickName": name,
-            "address": "江苏省扬州市邗江区杨庙镇双庙村任巷组31号",
-            "identityvalidPeriodTo": "2036-08-26"
-        },
-        "sysAttachmentInfoList": [{"fileUrl": pic_url, "fileType": 1}]
-    }
-
-    try:
-        # verify=False 绕过证书校验，timeout 防止线程卡死
-        response = requests.post(url, headers=headers, json=payload, timeout=20, verify=False)
-        
-        # 针对 "Expecting value" 报错的防御逻辑
-        if response.status_code != 200:
-            bot.send_message(chat_id, f"❌ 接口访问失败\n状态码: {response.status_code}\n提示：请检查 Token 或服务器 IP 是否被拦截。")
-            return
-
-        try:
-            result = response.json()
-        except ValueError:
-            # 如果不是 JSON 格式，说明接口回了 HTML 错误页
-            bot.send_message(chat_id, f"❌ 接口返回异常格式，无法解析。\n原始返回: {response.text[:100]}...")
-            return
-
-        if str(result.get("code")) == "200":
-            status = "人脸核验成功 🟢"
-            icon = "✅"
-        else:
-            status = f"人脸核验失败 🔴 ({result.get('msg', '核验不一致')})"
-            icon = "❌"
-
-        user_points[uid] -= RLHY_POINTS_COST
-        save_points()
-
-        reply_text = (
-            f"{icon} **人脸核验结果**\n\n"
-            f"姓名：**{name}**\n"
-            f"身份证：**{id_card}**\n"
-            f"结果：**{status}**\n\n"
-            f"已扣除 **{RLHY_POINTS_COST}** 积分！\n"
-            f"当前余额：**{user_points[uid]:.2f}**"
-        )
-    except Exception as e:
-        reply_text = f"❌ 网络请求出错: {str(e)}"
-
-    bot.send_message(chat_id, reply_text, parse_mode='Markdown')
 
 # ================= 辅助功能 =================
 
@@ -308,7 +236,7 @@ def sms_bomb_cmd(message):
 
 # ================= 指令入口 =================
 
-@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'set_token', 'start', 'pl', 'bq', '2ys', 'rlhy'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'set_token', 'start', 'pl', 'bq', '2ys'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
@@ -340,10 +268,6 @@ def handle_commands(message):
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足(0.01)")
         bot.send_message(chat_id, "请输入**姓名 身份证号**")
-    elif cmd == 'rlhy':
-        if user_points.get(uid, 0.0) < RLHY_POINTS_COST: return bot.reply_to(message, f"❌ 积分不足({RLHY_POINTS_COST})")
-        user_states[chat_id] = {'step': 'rlhy_input'}
-        bot.send_message(chat_id, "请输入人脸核验信息：\n格式：`姓名 身份证号 图片链接`", parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
@@ -371,13 +295,6 @@ def handle_all(message):
     step = state['step']
     
     if step == 'cyh_id': del user_states[chat_id]; return xiaowunb_query_logic(chat_id, text, uid)
-    elif step == 'rlhy_input':
-        del user_states[chat_id]
-        parts = re.split(r'[\s,，/]+', text.strip())
-        if len(parts) >= 3:
-            single_rlhy_verify(chat_id, parts[0], parts[1].upper(), parts[2], uid)
-        else:
-            bot.reply_to(message, "格式错误，请按 `姓名 身份证号 图片链接` 输入")
     elif step == 'v_name': user_states[chat_id].update({'step': 'v_ids', 'name': text}); bot.send_message(chat_id, f"✅ 姓名：{text}\n请发送身份证列表：")
     elif step == 'v_ids':
         ids = [i for i in re.findall(r'\d{17}[\dXx]', text) if len(i)==18]
@@ -415,8 +332,7 @@ def handle_callback(call):
             "补齐身份证and核验\n发送 /bq 进行操作\n每次补齐扣除 0.1 积分\n——————————————————\n"
             "名字-身份证核验（企业级）\n发送 /2ys 进行核验\n每次核验扣除 0.01 积分\n——————————————————\n"
             "名字-手机号-身份证核验（企业级）\n发送 /3ys 进行核验\n每次核验扣除 0.05 积分\n——————————————————\n"
-            "常用号查询\n发送 /cyh 进行查询\n每次查询扣除 1.5 积分 空不扣除积分\n——————————————————\n"
-            "人脸核验\n发送 /rlhy 进行核验\n每次扣除 0.1 积分"
+            "常用号查询\n发送 /cyh 进行查询\n每次查询扣除 1.5 积分 空不扣除积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
