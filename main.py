@@ -135,7 +135,7 @@ def single_verify_2ys(chat_id, name, id_card, uid):
         save_points()
         # 修复：确保解析 JSON
         res_json = r.json()
-        res_type = "二要素核验一致 ✅" if res_json.get("success") else f"二要素验证失败 ❌ ({res_json.get('message', '不一致')})"
+        res_type = "二要素核验一致✅" if res_json.get("success") else f"二要素验证失败 ❌ ({res_json.get('message', '不一致')})"
         res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
     except Exception as e:
         res = f"❌ 接口请求失败: {str(e)}"
@@ -262,19 +262,19 @@ def handle_commands(message):
         msg = bot.reply_to(message, "请输入X-Token：")
         bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
     elif cmd == 'cyh':
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足(1.5)！")
+        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
     elif cmd == '3ys':
-        if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "❌ 积分不足(0.05)")
+        if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
         bot.send_message(chat_id, "请输入三要素信息：\n`姓名 身份证 手机号`", parse_mode='Markdown')
     elif cmd == 'pl':
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)")
+        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_name'}; bot.send_message(chat_id, "请输入姓名：")
     elif cmd == 'bq':
-        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足(0.1)")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知用x）：")
     elif cmd == '2ys':
-        if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足(0.01)")
+        if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_2ys'} # 修复：增加了状态设定
         bot.send_message(chat_id, "请输入姓名 身份证")
 
