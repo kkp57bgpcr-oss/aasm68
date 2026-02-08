@@ -19,7 +19,7 @@ from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
 
-# 忽略 SSL 警告（因为使用了 verify=False）
+# 屏蔽 SSL 证书报警，保持后台整洁
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -33,7 +33,7 @@ DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLC
 
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
-# 请确保此 Token 格式正确（如果抓包里有 Bearer 请带上）
+# 人脸核验 Token（请确保此 Token 有效）
 RL_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViMDQ2LWI1NzYtNGJlNi05MGVhLTllY2YxNGNiMjI4MiJ9.fIUe4cTbOnK-l68a8cF44glMCd32sWxphcftKah6d9PK4PAo7vV9AdJOByZMt_X8YouKC6cb0_R_IUOgUBNMFg"
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -124,14 +124,16 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
     except Exception as e:
         bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
-# ================= 人脸核验核心逻辑（修正版） =================
+# ================= 人脸核验逻辑 (核心修复) =================
 
 def single_rlhy_verify(chat_id, name, id_card, pic_url, uid):
     url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
     
-    # 强化请求头，模拟真实微信环境
+    # 清理 Token 格式，确保只带一个 Bearer 前缀
+    clean_token = RL_AUTH_TOKEN.replace("Bearer ", "").strip()
+    
     headers = {
-        "Authorization": RL_AUTH_TOKEN,
+        "Authorization": f"Bearer {clean_token}",
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x1800282c) NetType/WIFI Language/zh_CN",
         "Referer": "https://servicewechat.com/wx2d2597151b9e8347/12/page-frame.html",
@@ -147,16 +149,24 @@ def single_rlhy_verify(chat_id, name, id_card, pic_url, uid):
             "address": "江苏省扬州市邗江区杨庙镇双庙村任巷组31号",
             "identityvalidPeriodTo": "2036-08-26"
         },
-        "sysAttachmentInfoList": [{
-            "fileUrl": pic_url,
-            "fileType": 1
-        }]
+        "sysAttachmentInfoList": [{"fileUrl": pic_url, "fileType": 1}]
     }
 
     try:
-        # verify=False 解决 SSL 网络错误，timeout 增加到 20s
+        # verify=False 绕过证书校验，timeout 防止线程卡死
         response = requests.post(url, headers=headers, json=payload, timeout=20, verify=False)
-        result = response.json()
+        
+        # 针对 "Expecting value" 报错的防御逻辑
+        if response.status_code != 200:
+            bot.send_message(chat_id, f"❌ 接口访问失败\n状态码: {response.status_code}\n提示：请检查 Token 或服务器 IP 是否被拦截。")
+            return
+
+        try:
+            result = response.json()
+        except ValueError:
+            # 如果不是 JSON 格式，说明接口回了 HTML 错误页
+            bot.send_message(chat_id, f"❌ 接口返回异常格式，无法解析。\n原始返回: {response.text[:100]}...")
+            return
 
         if str(result.get("code")) == "200":
             status = "人脸核验成功 🟢"
@@ -171,17 +181,17 @@ def single_rlhy_verify(chat_id, name, id_card, pic_url, uid):
         reply_text = (
             f"{icon} **人脸核验结果**\n\n"
             f"姓名：**{name}**\n"
-            f"身份证：**{id_card}**\n\n"
+            f"身份证：**{id_card}**\n"
             f"结果：**{status}**\n\n"
             f"已扣除 **{RLHY_POINTS_COST}** 积分！\n"
             f"当前余额：**{user_points[uid]:.2f}**"
         )
     except Exception as e:
-        reply_text = f"❌ 网络请求出错: {str(e)}\n提示：请检查服务器网络或 Token 是否依然有效。"
+        reply_text = f"❌ 网络请求出错: {str(e)}"
 
     bot.send_message(chat_id, reply_text, parse_mode='Markdown')
 
-# ================= 辅助功能（保持不变） =================
+# ================= 辅助功能 =================
 
 def get_id_check_code(id17):
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
@@ -221,7 +231,7 @@ def get_ui_bar(done, total):
     bar = "█" * filled + "░" * (bar_len - filled)
     return f"⌛ 开始核验...\n[{bar}] {done}/{total} {percent}%"
 
-# ================= 核验逻辑 =================
+# ================= 核验业务 =================
 
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
@@ -240,14 +250,6 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     total, done = len(id_list), 0
     success_match, is_running = None, True
     lock = threading.Lock()
-    def progress_monitor():
-        nonlocal done, is_running
-        while is_running:
-            time.sleep(3)
-            with lock: current_done = done
-            try: bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=get_ui_bar(current_done, total))
-            except: pass
-    threading.Thread(target=progress_monitor, daemon=True).start()
     def verify(id_no):
         nonlocal done, success_match, is_running
         if not is_running: return
@@ -270,7 +272,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 短信轰炸 =================
+# ================= 短信测压 =================
 
 def get_all_senders():
     all_funcs = []
@@ -348,7 +350,7 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # 自动识别逻辑
+    # 自动识别三要素和常用号
     if chat_id not in user_states or not user_states[chat_id].get('step'):
         parts = re.split(r'[,/\s]+', text.strip())
         if len(parts) == 3:
