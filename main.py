@@ -386,14 +386,23 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # ================= 新增：自动识别三要素输入 =================
-    # 匹配三要素格式：姓名 身份证 手机号（支持空格、逗号、斜杠分隔）
-    match_3ys = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+([\dXx]{15}|[\dXx]{18})[,/\s]+(1[3-9]\d{9})$', text)
-    if match_3ys:
-        if user_points.get(uid, 0.0) < 1.5:
-            return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
-        name, id_card, phone = match_3ys.groups()
-        return query_3ys_logic(chat_id, name, id_card, phone, uid)
+   # ================= 新增：自动识别三要素输入（支持两种顺序） =================
+# 1. 姓名 身份证 手机
+# 2. 姓名 手机 身份证
+
+match_3ys_1 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+([\dXx]{15}|[\dXx]{18})[,/\s]+(1[3-9]\d{9})$', text)
+match_3ys_2 = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+(1[3-9]\d{9})[,/\s]+([\dXx]{15}|[\dXx]{18})$', text)
+
+if match_3ys_1 or match_3ys_2:
+    if user_points.get(uid, 0.0) < 1.5:
+        return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
+    
+    if match_3ys_1:
+        name, id_card, phone = match_3ys_1.groups()
+    else:
+        name, phone, id_card = match_3ys_2.groups()
+    
+    return query_3ys_logic(chat_id, name, id_card, phone, uid)
     
     # 原有的单个手机号或身份证号识别
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
