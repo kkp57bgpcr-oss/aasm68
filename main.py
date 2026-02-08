@@ -10,8 +10,9 @@ import binascii
 import random
 import concurrent.futures
 import inspect  
+import urllib.parse  # 新增
 import sms_list 
-import sms_list_new  # 引入新接口文件
+import sms_list_new
 from sms_list import *
 from Crypto.Cipher import DES3
 from datetime import datetime
@@ -129,6 +130,47 @@ def hb_search_logic(chat_id, search_value, uid):
             bot.send_message(chat_id, "响应中data字段为空")
     except:
         bot.send_message(chat_id, "查询接口请求异常")
+
+# ================= 新增：三要素查询逻辑 =================
+
+def query_3ys_logic(chat_id, name, id_card, phone, uid):
+    """三要素查询逻辑"""
+    try:
+        # 生成查询URL
+        params = urllib.parse.urlencode({
+            'xm': name,
+            'sfz': id_card,
+            'sjh': phone
+        })
+        url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?{params}"
+        
+        # 扣除积分
+        user_points[uid] -= 1.5
+        save_points()
+        
+        # 返回结果
+        message = f"""✅ **三要素查询链接已生成**
+
+📋 查询信息：
+👤 姓名：`{name}`
+🆔 身份证：`{id_card}`
+📱 手机号：`{phone}`
+
+🔗 查询链接：
+{url}
+
+⚠️ 使用说明：
+1️⃣ 点击上方链接
+2️⃣ 完成人机验证
+3️⃣ 查看核验结果
+
+已扣除 **1.5** 积分！
+当前余额：**{user_points[uid]:.2f}** 积分"""
+        
+        bot.send_message(chat_id, message, parse_mode='Markdown')
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
 
 # ================= 3. 辅助功能 =================
 
@@ -275,6 +317,26 @@ def hb_cmd(message):
     if user_points.get(message.from_user.id, 0.0) < 3.5: return bot.reply_to(message, "积分不足！")
     bot.send_message(message.chat.id, "请输入身份证号或手机号进行查询")
 
+# ================= 新增：三要素命令 =================
+
+@bot.message_handler(commands=['3ys'])
+def cmd_3ys(message):
+    """三要素查询命令"""
+    uid = message.from_user.id
+    if user_points.get(uid, 0.0) < 1.5:
+        return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
+    
+    bot.send_message(
+        message.chat.id, 
+        "请输入三要素信息：\n\n"
+        "**格式：** 姓名 身份证号 手机号\n\n"
+        "**示例：**\n"
+        "`杨志强 411524200205296514 13800138000`\n\n"
+        "或用逗号分隔：\n"
+        "`杨志强,411524200205296514,13800138000`",
+        parse_mode='Markdown'
+    )
+
 @bot.message_handler(commands=['admin'])
 def admin_cmd(message):
     if message.from_user.id != ADMIN_ID: return
@@ -324,6 +386,16 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
+    # ================= 新增：自动识别三要素输入 =================
+    # 匹配三要素格式：姓名 身份证 手机号（支持空格、逗号、斜杠分隔）
+    match_3ys = re.match(r'^([\u4e00-\u9fa5]{2,4})[,/\s]+([\dXx]{15}|[\dXx]{18})[,/\s]+(1[3-9]\d{9})$', text)
+    if match_3ys:
+        if user_points.get(uid, 0.0) < 1.5:
+            return bot.reply_to(message, "❌ 积分不足！需要 **1.5** 积分", parse_mode='Markdown')
+        name, id_card, phone = match_3ys.groups()
+        return query_3ys_logic(chat_id, name, id_card, phone, uid)
+    
+    # 原有的单个手机号或身份证号识别
     if re.match(r'^1[3-9]\d{9}$', text) or re.match(r'^\d{17}[\dXx]$', text):
         state = user_states.get(chat_id)
         if state and state['step'] == 'cyh_id':
@@ -333,6 +405,7 @@ def handle_all(message):
         if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "积分不足(3.5)")
         return hb_search_logic(chat_id, text, uid)
 
+    # 原有的二要素识别
     match_2ys = re.match(r'^([\u4e00-\u9fa5]{2,4})\s+(\d{17}[\dXx])$', text)
     if match_2ys:
         if user_points.get(uid, 0.0) < 0.5: return bot.reply_to(message, "积分不足(0.5)")
@@ -388,9 +461,13 @@ def handle_callback(call):
             "发送 /bq 进行查询\n"
             "每次补齐扣除 0.5 积分\n"
             "——————————————————\n"
-            "单次二要素核验\n"
+            "二要素核验\n"
             "发送 /2ys 进行核验\n"
             "每次核验扣除 0.5 积分\n"
+            "——————————————————\n"
+            "三要素核验\n"
+            "发送 /3ys 进行查询\n"
+            "每次查询扣除 1.5 积分\n"
             "——————————————————\n"
             "常用号查询\n"
             "发送 /cyh 进行查询\n"
