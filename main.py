@@ -13,6 +13,7 @@ API_TOKEN = '8338893180:AAH-l_4m1-tweKyt92bliyk4fsPqoPQWzpU'
 ADMIN_ID = 6649617045 
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
+
 # 三要素接口
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
@@ -36,7 +37,7 @@ def save_points():
 
 user_points = load_data()
 
-# ================= 2. 严格对齐截图的 UI 文本 =================
+# ================= 2. UI 界面 (纯净版，无多余提示) =================
 
 def get_main_text(message, uid, pts):
     first_name = message.from_user.first_name if message.from_user.first_name else "铭"
@@ -47,8 +48,9 @@ def get_main_text(message, uid, pts):
             f"用户名: {username}\n"
             f"当前余额: `{pts:.2f}积分`\n\n"
             f"使用帮助可查看使用教程\n"
-            f"在线充值可支持24小时\n"
-            f"1 USDT = 1 积分\n"
+            f"在线充值可支持 24 小时\n"
+            f"1 USDT = 1 积分")
+
 def get_help_text():
     return ("🛠️️使用帮助\n"
             "短信测压\n"
@@ -84,7 +86,6 @@ def get_main_markup():
 
 # ================= 3. 核心业务逻辑 =================
 
-# --- 三要素 (结果：三要素核验一致✅) ---
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
     url = "https://esb.wbszkj.cn/prod-api/wxminiapp/user/userIdVerify"
     headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json"}
@@ -93,21 +94,21 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         r = requests.post(url, headers=headers, json=payload, verify=False, timeout=10)
         user_points[uid] -= 0.05
         save_points()
-        is_ok = r.status_code == 200 and r.json().get("success")
+        
+        is_ok = r.status_code == 200 and r.json().get("success") == True
         status = "三要素核验一致✅" if is_ok else "三要素核验不一致❌"
-        res = (f"名字：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{status}\n\n"
-               f"已扣除 0.05 积分！\n当前积分余额：{user_points[uid]:.2f} 积分")
+        
+        res = (f"名字：{name}\n"
+               f"手机号：{phone}\n"
+               f"身份证：{id_card}\n"
+               f"结果：{status}\n\n"
+               f"已扣除 0.05 积分！\n"
+               f"当前积分余额：{user_points[uid]:.2f} 积分")
         bot.send_message(chat_id, res)
-    except: bot.send_message(chat_id, "❌ 接口超时")
+    except:
+        bot.send_message(chat_id, "❌ 接口超时，请稍后重试")
 
-# --- 二要素核验 ---
-def single_verify_2ys(chat_id, name, id_card, uid):
-    # 此处替换为你的二要素接口逻辑
-    user_points[uid] -= 0.01
-    save_points()
-    bot.send_message(chat_id, f"姓名：{name}\n身份证：{id_card}\n结果：二要素核验一致✅\n余额：{user_points[uid]:.2f}")
-
-# ================= 4. 消息路由 (指令优先) =================
+# ================= 4. 消息路由 (修复指令失效与崩溃) =================
 
 @bot.message_handler(commands=['start', 'add', 'help', 'sms', 'pl', 'bq', 'cyh', '2ys', '3ys'])
 def handle_commands(message):
@@ -119,52 +120,42 @@ def handle_commands(message):
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
     elif cmd == 'add' and uid == ADMIN_ID:
         try:
-            p = message.text.split()
-            tid, amt = int(p[1]), float(p[2])
-            user_points[tid] = user_points.get(tid, 0.0) + amt
+            parts = message.text.split()
+            target_id, amount = int(parts[1]), float(parts[2])
+            user_points[target_id] = user_points.get(target_id, 0.0) + amount
             save_points()
-            bot.reply_to(message, f"✅ 已充值！当前余额：`{user_points[tid]:.2f}`")
-        except: bot.reply_to(message, "用法：`/add ID 积分`")
+            bot.reply_to(message, f"✅ 已充值！当前余额：`{user_points[target_id]:.2f}`")
+        except:
+            bot.reply_to(message, "用法：`/add ID 积分`")
     elif cmd == 'help':
         bot.send_message(chat_id, get_help_text())
-    elif cmd == 'sms':
-        bot.reply_to(message, "请输入要执行的手机号：")
-    # 其他指令以此类推...
 
 @bot.message_handler(func=lambda m: True)
-def handle_all_text(message):
+def handle_auto_recognition(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
-    if text.startswith('/'): return 
+    if text.startswith('/'): return
 
     # 自动识别逻辑
     parts = re.split(r'[,/\s]+', text)
-    if len(parts) == 3: # 三要素
+    if len(parts) == 3:
         n, p, i = None, None, None
         for x in parts:
             if re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
             elif re.match(r'^1[3-9]\d{9}$', x): p = x
             elif re.match(r'^\d{15,18}[xX]?$', x): i = x.upper()
         if n and p and i:
-            if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足(0.05)")
+            if user_points.get(uid, 0.0) < 0.05:
+                return bot.reply_to(message, "积分不足(0.05)")
             return query_3ys_logic(chat_id, n, i, p, uid)
 
-    if len(parts) == 2: # 二要素
-        n, i = None, None
-        for x in parts:
-            if re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
-            elif re.match(r'^\d{15,18}[xX]?$', x): i = x.upper()
-        if n and i:
-            if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足(0.01)")
-            return single_verify_2ys(chat_id, n, i, uid)
-
 @bot.callback_query_handler(func=lambda call: True)
-def handle_cb(call):
+def handle_callback(call):
     uid = call.from_user.id
     if call.data == "view_help":
         bot.edit_message_text(get_help_text(), call.message.chat.id, call.message.message_id)
     elif call.data == "view_pay":
-        bot.send_message(call.message.chat.id, "请联系管理员充值：" + ADMIN_USERNAME)
+        bot.send_message(call.message.chat.id, f"请联系管理员充值：{ADMIN_USERNAME}")
 
 if __name__ == '__main__':
-    print("Bot is running...")
+    print("机器人已启动...")
     bot.infinity_polling()
