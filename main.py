@@ -118,7 +118,8 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         
         if response.status_code == 200:
             result = response.json()
-            res_type = "✅一致✅" if result.get("success") == True else f"❌不一致❌ ({result.get('msg', '信息不匹配')})"
+            # --- 铭哥要求的结果修改 ---
+            res_type = "三要素核验一致✅" if result.get("success") == True else "三要素核验不一致❌"
             message = (f"名字：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_type}\n\n"
                        f"已扣除 0.05 积分！\n当前积分余额：{user_points[uid]:.2f} 积分")
         else:
@@ -151,7 +152,7 @@ def single_verify_2ys(chat_id, name, id_card, uid):
         user_points[uid] -= 0.01
         save_points()
         res_json = r.json()
-        res_type = "二要素核验一致✅" if res_json.get("success") else f"二要素验证失败 ❌ ({res_json.get('message', '不一致')})"
+        res_type = "二要素核验一致✅" if res_json.get("success") else "二要素验证失败 ❌"
         res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
     except Exception as e:
         res = f"❌ 接口请求失败: {str(e)}"
@@ -300,26 +301,29 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # --- 💡 铭哥专属：全自动智能识别逻辑 (核心改动) ---
+    # --- 💡 铭哥专属：修正后的全自动智能识别逻辑 ---
     if chat_id not in user_states or not user_states[chat_id].get('step'):
-        # 1. 自动抓取信息 (正则提取)
-        id_search = re.search(r'(\d{15}$|^\d{17}[\dXx])', text)
-        phone_search = re.search(r'1[3-9]\d{9}', text)
+        # 1. 独立抓取每一个要素，互不干扰
+        id_search = re.search(r'(\d{18}|\d{17}[Xx]|\d{15})', text)
+        phone_search = re.search(r'(1[3-9]\d{9})', text)
         name_search = re.search(r'[\u4e00-\u9fa5]{2,4}', text)
 
-        # 🚀 三要素识别 (姓名 + 手机 + 身份证)
+        # 🚀 情况 A: 三要素齐全 (优先识别)
         if id_search and phone_search and name_search:
-            n, p, i = name_search.group(), phone_search.group(), id_search.group().upper()
+            n = name_search.group()
+            p = phone_search.group()
+            i = id_search.group().upper()
             if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
             return query_3ys_logic(chat_id, n, i, p, uid)
             
-        # 🚀 二要素识别 (只有姓名 + 身份证)
+        # 🚀 情况 B: 二要素 (姓名 + 身份证，且没有11位手机号)
         if id_search and name_search and not phone_search:
-            n, i = name_search.group(), id_search.group().upper()
+            n = name_search.group()
+            i = id_search.group().upper()
             if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
             return single_verify_2ys(chat_id, n, i, uid)
 
-        # 🚀 常用号识别 (只有身份证)
+        # 🚀 情况 C: 仅身份证 (常用号查询)
         if id_search and not name_search and not phone_search:
             i = id_search.group().upper()
             if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
@@ -334,7 +338,14 @@ def handle_all(message):
         del user_states[chat_id]
         parts = re.split(r'[,/\s\n]+', text.strip())
         if len(parts) >= 3:
-            query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
+            # 这里也对应修正一下逻辑
+            n, i, p = None, None, None
+            for x in parts:
+                if not n and re.match(r'^[\u4e00-\u9fa5]{2,5}$', x): n = x
+                elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
+                elif not i and re.match(r'^(\d{15}$|^\d{17}[\dXx])$', x): i = x.upper()
+            if n and i and p: query_3ys_logic(chat_id, n, i, p, uid)
+            else: bot.reply_to(message, "无法从输入中解析三要素，请检查格式")
         else:
             bot.reply_to(message, "格式错误，请发送：`姓名 身份证 手机号`")
 
@@ -398,7 +409,7 @@ def handle_callback(call):
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
-        bot.edit_message_text("🛍️ 请选择充值方式：\n1 USDT = 1 积分", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
+        bot.edit_message_text("🛍️ 请 choose 充值方式：\n1 USDT = 1 积分", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
     elif call.data == "back_to_main":
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
     elif call.data == "start_verify_flow":
