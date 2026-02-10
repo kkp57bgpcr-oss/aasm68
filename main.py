@@ -118,7 +118,7 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         
         if response.status_code == 200:
             result = response.json()
-            res_type = "三要素核验一致✅" if result.get("success") == True else f"三要素核验不一致❌ ({result.get('msg', '信息不匹配')})"
+            res_type = "✅一致✅" if result.get("success") == True else f"❌不一致❌ ({result.get('msg', '信息不匹配')})"
             message = (f"名字：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_type}\n\n"
                        f"已扣除 0.05 积分！\n当前积分余额：{user_points[uid]:.2f} 积分")
         else:
@@ -300,40 +300,30 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # --- 💡 核心自动识别逻辑 (铭哥要求的改进) ---
+    # --- 💡 铭哥专属：全自动智能识别逻辑 (核心改动) ---
     if chat_id not in user_states or not user_states[chat_id].get('step'):
-        # 按空格、换行、逗号切割字符串
-        parts = re.split(r'[,/\s\n]+', text.strip())
-        
-        # 1. 自动识别三要素 (姓名 + 11位手机号 + 15/18位身份证)
-        if len(parts) >= 3:
-            n, p, i = None, None, None
-            for x in parts:
-                # 识别姓名：2-5位中文
-                if not n and re.match(r'^[\u4e00-\u9fa5]{2,5}$', x): n = x
-                # 识别手机号：11位数字
-                elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
-                # 识别身份证：15或18位
-                elif not i and re.match(r'^(\d{15}$|^\d{17}[\dXx])$', x): i = x.upper()
-            
-            if n and p and i:
-                if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
-                return query_3ys_logic(chat_id, n, i, p, uid)
-        
-        # 2. 自动识别二要素 (姓名 + 15/18位身份证)
-        if len(parts) == 2:
-            n, i = None, None
-            for x in parts:
-                if not n and re.match(r'^[\u4e00-\u9fa5]{2,5}$', x): n = x
-                elif not i and re.match(r'^(\d{15}$|^\d{17}[\dXx])$', x): i = x.upper()
-            if n and i:
-                if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
-                return single_verify_2ys(chat_id, n, i, uid)
+        # 1. 自动抓取信息 (正则提取)
+        id_search = re.search(r'(\d{15}$|^\d{17}[\dXx])', text)
+        phone_search = re.search(r'1[3-9]\d{9}', text)
+        name_search = re.search(r'[\u4e00-\u9fa5]{2,4}', text)
 
-        # 3. 自动识别常用号查询 (仅身份证)
-        if re.match(r'^(\d{15}$|^\d{17}[\dXx])$', text):
+        # 🚀 三要素识别 (姓名 + 手机 + 身份证)
+        if id_search and phone_search and name_search:
+            n, p, i = name_search.group(), phone_search.group(), id_search.group().upper()
+            if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
+            return query_3ys_logic(chat_id, n, i, p, uid)
+            
+        # 🚀 二要素识别 (只有姓名 + 身份证)
+        if id_search and name_search and not phone_search:
+            n, i = name_search.group(), id_search.group().upper()
+            if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
+            return single_verify_2ys(chat_id, n, i, uid)
+
+        # 🚀 常用号识别 (只有身份证)
+        if id_search and not name_search and not phone_search:
+            i = id_search.group().upper()
             if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
-            return xiaowunb_query_logic(chat_id, text, uid)
+            return xiaowunb_query_logic(chat_id, i, uid)
 
     # --- 状态机处理逻辑 (维持原有流程) ---
     state = user_states.get(chat_id)
