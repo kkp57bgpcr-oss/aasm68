@@ -31,7 +31,8 @@ POINTS_FILE = 'points.json'
 TOKEN_FILE = 'token.txt'
 DEFAULT_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNDkyNDYiLCJpYXQiOjE3Mzg1MDMxMTcsImV4cCI6MTczODY3NTkxN30.i9w1G8Y2mU5R5cCI6IkpXVCJ9" 
 
-AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
+# 三要素核验接口 Authorization
+AUTH_BEARER = "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpblR5cGUiOiJsb2dpbiIsImxvZ2luSWQiOiJhcHBfdXNlcjoxMTc1NDYwIiwicm5TdHIiOiJJSmVrU005UTlHc2hTV2RiVENQZ1VFbnpDN0MwWjFYZCJ9.vxjF6ShG81TM2hT-uiYyubHGOlEuCKC-m8nSmi7sayU"
 
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
@@ -90,8 +91,43 @@ def decrypt_data(encrypted_text_hex, key):
     except (binascii.Error, ValueError, json.JSONDecodeError) as e:
         return {"error": str(e)}
 
-# ================= 常用号查询逻辑 =================
+# ================= 3. 核心查询逻辑 =================
 
+# --- 三要素查询 (wbszkj 接口) ---
+def query_3ys_logic(chat_id, name, id_card, phone, uid):
+    url = "https://esb.wbszkj.cn/prod-api/wxminiapp/user/userIdVerify"
+    headers = {
+        "Host": "esb.wbszkj.cn",
+        "Authorization": AUTH_BEARER,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15",
+        "Referer": "https://servicewechat.com/wx9a9be9dbdb704208/18/page-frame.html"
+    }
+    data = {
+        "name": name,
+        "phone": phone,
+        "idNo": id_card,
+        "idType": 1,
+        "idFrontFile": "https://guarantee-file.wbszkj.cn/gcb/prod/2026/02/10/8cc33d9e9328421ead4855120bc3d32e.jpg",
+        "idBackFile": "https://guarantee-file.wbszkj.cn/gcb/prod/2026/02/10/40449082275741f0830d0c1ce7b9d4b8.jpg"
+    }
+    try:
+        response = requests.post(url, headers=headers, json=data, verify=False, timeout=10)
+        user_points[uid] -= 0.05
+        save_points()
+        
+        if response.status_code == 200:
+            result = response.json()
+            res_type = "三要素核验一致✅" if result.get("success") == True else f"三要素核验不一致❌ ({result.get('msg', '信息不匹配')})"
+            message = (f"名字：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_type}\n\n"
+                       f"已扣除 0.05 积分！\n当前积分余额：{user_points[uid]:.2f} 积分")
+        else:
+            message = f"❌ 接口异常，状态码: {response.status_code}"
+        bot.send_message(chat_id, message)
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
+
+# --- 常用号查询 ---
 def xiaowunb_query_logic(chat_id, id_number, uid):
     base_url = "http://xiaowunb.top/cyh.php"
     params = {"sfz": id_number}
@@ -106,34 +142,14 @@ def xiaowunb_query_logic(chat_id, id_number, uid):
     except Exception as e:
         bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
 
-# ================= 三要素查询逻辑 =================
-
-def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    try:
-        params = urllib.parse.urlencode({'xm': name, 'sfz': id_card, 'sjh': phone})
-        url = f"https://qingfeng.qzz.io/api/free/heyan/sys1?{params}"
-        user_points[uid] -= 0.05
-        save_points()
-        message = f"✅ **三要素查询链接已生成**\n\n查询信息：\n姓名：`{name}`\n身份证：`{id_card}`\n手机号：`{phone}`\n\n查询链接：\n{url}\n\n已扣除 **0.05** 积分！\n当前余额：**{user_points[uid]:.2f}** 积分"
-        bot.send_message(chat_id, message, parse_mode='Markdown')
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ 查询失败：{str(e)}")
-
-# ================= 二要素核验逻辑 =================
-
+# --- 二要素核验 ---
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
-    headers = {
-        "Authorization": AUTH_BEARER, 
-        "Content-Type": "application/json", 
-        "User-Agent": "Mozilla/5.0", 
-        "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"
-    }
+    headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
         user_points[uid] -= 0.01
         save_points()
-        # 修复：确保解析 JSON
         res_json = r.json()
         res_type = "二要素核验一致✅" if res_json.get("success") else f"二要素验证失败 ❌ ({res_json.get('message', '不一致')})"
         res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
@@ -141,7 +157,7 @@ def single_verify_2ys(chat_id, name, id_card, uid):
         res = f"❌ 接口请求失败: {str(e)}"
     bot.send_message(chat_id, res, parse_mode='Markdown')
 
-# ================= 辅助功能 =================
+# ================= 4. 辅助功能 =================
 
 def get_id_check_code(id17):
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
@@ -208,7 +224,7 @@ def run_batch_task(chat_id, msg_id, name, id_list, uid):
     except: pass
     bot.send_message(chat_id, success_match if success_match else "❌ **未发现匹配结果**", parse_mode='Markdown')
 
-# ================= 短信测压 =================
+# ================= 5. 短信测压 =================
 
 def get_all_senders():
     all_funcs = []
@@ -242,7 +258,7 @@ def sms_bomb_cmd(message):
         bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
     threading.Thread(target=do_bomb).start()
 
-# ================= 指令入口 =================
+# ================= 6. 指令入口 =================
 
 @bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'set_token', 'start', 'pl', 'bq', '2ys'])
 def handle_commands(message):
@@ -259,13 +275,14 @@ def handle_commands(message):
             bot.reply_to(message, f"✅ 已充值！当前余额: `{user_points[tid]:.2f}`")
         except: pass
     elif cmd == 'set_token' and uid == ADMIN_ID:
-        msg = bot.reply_to(message, "请输入X-Token：")
+        msg = bot.reply_to(message, "请输入Authorization/X-Token：")
         bot.register_next_step_handler(msg, lambda m: [save_token(m.text.strip()), bot.send_message(m.chat.id, "✅ Token已更新")])
     elif cmd == 'cyh':
         if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
     elif cmd == '3ys':
         if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
+        user_states[chat_id] = {'step': 'v_3ys'}
         bot.send_message(chat_id, "请输入三要素信息：\n`姓名 身份证 手机号`", parse_mode='Markdown')
     elif cmd == 'pl':
         if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
@@ -275,7 +292,7 @@ def handle_commands(message):
         user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知用x）：")
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
-        user_states[chat_id] = {'step': 'v_2ys'} # 修复：增加了状态设定
+        user_states[chat_id] = {'step': 'v_2ys'}
         bot.send_message(chat_id, "请输入姓名 身份证")
 
 @bot.message_handler(func=lambda m: True)
@@ -283,52 +300,65 @@ def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return 
     
-    # --- 自动识别逻辑 (核心修复) ---
+    # --- 💡 核心自动识别逻辑 (铭哥要求的改进) ---
     if chat_id not in user_states or not user_states[chat_id].get('step'):
-        parts = re.split(r'[,/\s]+', text.strip())
+        # 按空格、换行、逗号切割字符串
+        parts = re.split(r'[,/\s\n]+', text.strip())
         
-        # 1. 自动识别三要素 (3项)
-        if len(parts) == 3:
+        # 1. 自动识别三要素 (姓名 + 11位手机号 + 15/18位身份证)
+        if len(parts) >= 3:
             n, p, i = None, None, None
             for x in parts:
-                if re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
-                elif re.match(r'^1[3-9]\d{9}$', x): p = x
-                elif re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+                # 识别姓名：2-5位中文
+                if not n and re.match(r'^[\u4e00-\u9fa5]{2,5}$', x): n = x
+                # 识别手机号：11位数字
+                elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
+                # 识别身份证：15或18位
+                elif not i and re.match(r'^(\d{15}$|^\d{17}[\dXx])$', x): i = x.upper()
+            
             if n and p and i:
-                if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "❌ 积分不足(0.05)")
+                if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
                 return query_3ys_logic(chat_id, n, i, p, uid)
         
-        # 2. 自动识别二要素 (2项: 姓名 + 身份证)
+        # 2. 自动识别二要素 (姓名 + 15/18位身份证)
         if len(parts) == 2:
             n, i = None, None
             for x in parts:
-                if re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
-                elif re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+                if not n and re.match(r'^[\u4e00-\u9fa5]{2,5}$', x): n = x
+                elif not i and re.match(r'^(\d{15}$|^\d{17}[\dXx])$', x): i = x.upper()
             if n and i:
-                if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "❌ 积分不足(0.01)")
+                if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
                 return single_verify_2ys(chat_id, n, i, uid)
 
-        # 3. 自动识别常用号 (单项: 身份证)
-        if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
-            if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "❌ 积分不足(1.5)")
+        # 3. 自动识别常用号查询 (仅身份证)
+        if re.match(r'^(\d{15}$|^\d{17}[\dXx])$', text):
+            if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
             return xiaowunb_query_logic(chat_id, text, uid)
 
-    # --- 状态机处理逻辑 ---
+    # --- 状态机处理逻辑 (维持原有流程) ---
     state = user_states.get(chat_id)
     if not state: return
     step = state['step']
     
-    if step == 'cyh_id': 
+    if step == 'v_3ys':
+        del user_states[chat_id]
+        parts = re.split(r'[,/\s\n]+', text.strip())
+        if len(parts) >= 3:
+            query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
+        else:
+            bot.reply_to(message, "格式错误，请发送：`姓名 身份证 手机号`")
+
+    elif step == 'cyh_id': 
         del user_states[chat_id]
         return xiaowunb_query_logic(chat_id, text, uid)
     
-    elif step == 'v_2ys': # 修复：处理 /2ys 后的输入
+    elif step == 'v_2ys':
         del user_states[chat_id]
-        parts = re.split(r'[,/\s]+', text.strip())
+        parts = re.split(r'[,/\s\n]+', text.strip())
         if len(parts) >= 2:
             single_verify_2ys(chat_id, parts[0], parts[1].upper(), uid)
         else:
-            bot.reply_to(message, "输入格式错误，请发送：`姓名 身份证号`")
+            bot.reply_to(message, "格式错误，请发送：`姓名 身份证`")
 
     elif step == 'v_name': 
         user_states[chat_id].update({'step': 'v_ids', 'name': text})
