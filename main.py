@@ -193,6 +193,10 @@ def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
     
+    # 权限检查：如果是管理员专用指令且用户不是管理员
+    if cmd in ['add', 'admin'] and uid != ADMIN_ID:
+        return bot.reply_to(message, "🤡你没有权限使用该指令…")
+
     if cmd == 'start':
         if uid not in user_points: user_points[uid] = 0.0
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
@@ -207,13 +211,13 @@ def handle_commands(message):
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
     elif cmd == '3ys':
         if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
-        user_states[chat_id] = {'step': 'v_3ys'}; bot.send_message(chat_id, "请输入三要素信息：姓名 手机号 身份证")
+        user_states[chat_id] = {'step': 'v_3ys'}; bot.send_message(chat_id, "请输入姓名 手机号 身份证")
     elif cmd == 'bq':
         if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知用x）：")
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
-        user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入：姓名 身份证")
+        user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入姓名 身份证")
 
 # ================= 自动识别逻辑 =================
 
@@ -263,7 +267,7 @@ def handle_all(message):
             elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and p and i: query_3ys_logic(chat_id, n, i, p, uid)
-        else: bot.reply_to(message, "格式错误，请确保包含：姓名 手机号 身份证")
+        else: bot.reply_to(message, "格式错误，请确保包含姓名 手机号 身份证")
 
     elif step == 'cyh_id': 
         del user_states[chat_id]
@@ -277,7 +281,7 @@ def handle_all(message):
             if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and i: single_verify_2ys(chat_id, n, i, uid)
-        else: bot.reply_to(message, "格式错误，请发送：姓名 身份证")
+        else: bot.reply_to(message, "格式错误，请发送姓名 身份证")
         
     elif step == 'g_card':
         user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
@@ -300,7 +304,6 @@ def handle_all(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
-        # 你可以在这里随心所欲修改帮助内容
         help_text = (
             "🛠️️使用帮助\n"
             "短信测压\n"
