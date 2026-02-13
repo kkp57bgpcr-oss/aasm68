@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import base64
 from PIL import Image
+import traceback
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -42,10 +43,16 @@ FACE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViM
 IMGLOC_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
 IMGLOC_URL = "https://imgloc.com/api/1/upload"
 
+print("=" * 50)
+print("机器人启动中...")
+print("=" * 50)
+
 bot = telebot.TeleBot(API_TOKEN)
 # 清除可能的webhook
+print("清除webhook...")
 bot.remove_webhook()
 time.sleep(1)
+print("webhook已清除")
 
 user_points = {}
 user_states = {}
@@ -59,20 +66,26 @@ def load_data():
             with open(POINTS_FILE, 'r') as f:
                 data = json.load(f)
                 pts = {int(k): float(v) for k, v in data.items()}
-        except: pass
+            print(f"加载积分数据: {len(pts)} 个用户")
+        except Exception as e:
+            print(f"加载积分数据失败: {e}")
     return pts
 
 user_points = load_data()
 
 def save_points():
-    with open(POINTS_FILE, 'w') as f:
-        json.dump({str(k): v for k, v in user_points.items()}, f)
+    try:
+        with open(POINTS_FILE, 'w') as f:
+            json.dump({str(k): v for k, v in user_points.items()}, f)
+    except Exception as e:
+        print(f"保存积分失败: {e}")
 
 # ================= 人脸核验功能 =================
 
 def upload_to_imgloc(image_bytes):
     """上传到 imgloc 图床"""
     try:
+        print("开始上传到 imgloc...")
         files = {'source': ('photo.jpg', image_bytes, 'image/jpeg')}
         data = {
             'key': IMGLOC_API_KEY,
@@ -80,11 +93,15 @@ def upload_to_imgloc(image_bytes):
         }
         
         response = requests.post(IMGLOC_URL, files=files, data=data, timeout=30)
+        print(f"imgloc 状态码: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
+            print(f"imgloc 响应: {result}")
             if result.get('status_code') == 200:
-                return result['image']['url']
+                url = result['image']['url']
+                print(f"上传成功: {url}")
+                return url
         return None
     except Exception as e:
         print(f"imgloc上传失败: {e}")
@@ -93,31 +110,46 @@ def upload_to_imgloc(image_bytes):
 def image_to_base64(image_bytes):
     """图片转Base64"""
     try:
+        print("开始转换图片到Base64...")
+        print(f"原始图片大小: {len(image_bytes)} 字节")
+        
         # 压缩图片
         img = Image.open(BytesIO(image_bytes))
+        print(f"图片尺寸: {img.size}, 格式: {img.format}")
+        
         img.thumbnail((1024, 1024))
+        print(f"压缩后尺寸: {img.size}")
+        
         output = BytesIO()
         img.save(output, format='JPEG', quality=85)
         compressed_bytes = output.getvalue()
+        print(f"压缩后大小: {len(compressed_bytes)} 字节")
         
         base64_str = base64.b64encode(compressed_bytes).decode('utf-8')
+        print("Base64转换完成")
         return f"data:image/jpeg;base64,{base64_str}"
     except Exception as e:
         print(f"Base64转换失败: {e}")
+        traceback.print_exc()
         return None
 
 def verify_face(name, id_card, image_bytes):
     """执行人脸核验"""
+    print(f"\n开始人脸核验 - 姓名: {name}, 身份证: {id_card}")
     
     # 先尝试 imgloc 上传
     image_url = upload_to_imgloc(image_bytes)
     
     # 如果失败，用 Base64
     if not image_url:
+        print("imgloc上传失败，尝试Base64")
         image_url = image_to_base64(image_bytes)
     
     if not image_url:
+        print("图片处理失败")
         return {"success": False, "msg": "人脸核验不一致🔴"}
+    
+    print(f"图片URL已准备: {image_url[:50]}...")
     
     # 核验接口
     url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
@@ -138,12 +170,17 @@ def verify_face(name, id_card, image_bytes):
         "sysAttachmentInfoList": [{"fileUrl": image_url}]
     }
     
+    print("发送核验请求...")
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
+        print(f"核验响应状态码: {response.status_code}")
+        print(f"核验响应内容: {response.text[:200]}")
         
         try:
             result = response.json()
+            print(f"核验结果: {result}")
         except:
+            print("响应不是JSON格式")
             return {"success": False, "msg": "人脸核验不一致🔴"}
         
         if str(result.get("code")) in ["200", 200]:
@@ -152,6 +189,8 @@ def verify_face(name, id_card, image_bytes):
             return {"success": False, "msg": "人脸核验不一致🔴"}
             
     except Exception as e:
+        print(f"核验请求异常: {e}")
+        traceback.print_exc()
         return {"success": False, "msg": "人脸核验不一致🔴"}
 
 # ================= 人脸核验处理函数 =================
@@ -161,15 +200,25 @@ def handle_face_photo(message):
     uid = message.from_user.id
     chat_id = message.chat.id
     
+    print(f"\n处理人脸核验照片 - 用户: {uid}, 聊天: {chat_id}")
+    
     # 检查状态
-    if chat_id not in user_states or user_states[chat_id].get('step') != 'waiting_face_photo':
+    if chat_id not in user_states:
+        print(f"状态不存在: {chat_id}")
         bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
         return
     
     state = user_states[chat_id]
+    print(f"当前状态: {state}")
+    
+    if state.get('step') != 'waiting_face_photo':
+        print(f"状态错误: {state.get('step')}")
+        bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
+        return
     
     # 扣除积分
     if user_points.get(uid, 0.0) < 0.1:
+        print(f"积分不足: {user_points.get(uid, 0.0)}")
         bot.send_message(chat_id, "❌ 积分不足，需要 0.1 积分")
         del user_states[chat_id]
         return
@@ -180,19 +229,29 @@ def handle_face_photo(message):
     try:
         # 获取照片
         photos = message.photo
+        print(f"收到照片数量: {len(photos)}")
+        
         photo = photos[-1]  # 使用最大尺寸
         file_id = photo.file_id
+        print(f"文件ID: {file_id}")
         
         # 下载照片
+        print("正在下载照片...")
         file_info = bot.get_file(file_id)
+        print(f"文件信息: {file_info}")
+        
         downloaded_file = bot.download_file(file_info.file_path)
+        print(f"下载完成，文件大小: {len(downloaded_file)} 字节")
         
         # 执行核验
+        print("开始执行人脸核验...")
         result = verify_face(state['name'], state['id_card'], downloaded_file)
+        print(f"核验结果: {result}")
         
         # 扣除积分
         user_points[uid] -= 0.1
         save_points()
+        print(f"积分扣除成功，当前余额: {user_points[uid]:.2f}")
         
         # 发送结果
         if result["success"]:
@@ -217,11 +276,14 @@ def handle_face_photo(message):
             )
         
     except Exception as e:
+        print(f"❌ 处理照片出错: {str(e)}")
+        traceback.print_exc()
         bot.send_message(chat_id, f"❌ 处理失败: {str(e)}")
     finally:
         # 清除状态
         if chat_id in user_states:
             del user_states[chat_id]
+            print("状态已清除")
 
 # ================= 原有功能逻辑 =================
 
@@ -360,6 +422,8 @@ def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
     
+    print(f"收到指令: /{cmd} 来自用户 {uid}")
+    
     # 权限检查：如果是管理员专用指令且用户不是管理员
     if cmd in ['add', 'admin'] and uid != ADMIN_ID:
         return bot.reply_to(message, "🤡你没有权限使用该指令…")
@@ -388,6 +452,7 @@ def handle_commands(message):
     elif cmd == 'rlhy':
         if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足，需要 0.1 积分")
         user_states[chat_id] = {'step': 'rlhy_name'}; bot.send_message(chat_id, "📝 请输入姓名和身份证号\n例如：张三 110101199001011234")
+        print(f"设置状态: {user_states[chat_id]}")
 
 # ================= 消息处理 =================
 
@@ -395,16 +460,23 @@ def handle_commands(message):
 def handle_all(message):
     uid, chat_id = message.from_user.id, message.chat.id
     
+    print(f"收到消息 - 类型: {message.content_type}, 用户: {uid}, 聊天: {chat_id}")
+    
     # 处理照片消息
     if message.content_type == 'photo':
+        print(f"收到照片消息，当前状态: {user_states.get(chat_id)}")
         if chat_id in user_states and user_states[chat_id].get('step') == 'waiting_face_photo':
+            print("进入人脸核验照片处理")
             handle_face_photo(message)
         else:
+            print("不在人脸核验状态，忽略照片")
             bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
         return
     
     # 处理文本消息
     text = message.text.strip() if message.text else ""
+    print(f"文本内容: {text}")
+    
     if text.startswith('/'): 
         return
     
@@ -440,6 +512,8 @@ def handle_all(message):
     if not state: 
         return
     step = state['step']
+    
+    print(f"当前步骤: {step}")
     
     if step == 'v_3ys':
         del user_states[chat_id]
@@ -506,6 +580,7 @@ def handle_all(message):
                 'name': n,
                 'id_card': i
             }
+            print(f"设置人脸核验状态: {user_states[chat_id]}")
             bot.send_message(chat_id, f"✅ 已收到信息\n\n姓名: {n}\n身份证: {i}\n\n📸 请发送本人照片")
         else:
             bot.send_message(chat_id, "❌ 格式错误\n请发送：姓名 身份证号\n例如：张三 110101199001011234")
@@ -552,7 +627,16 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
+    print("=" * 50)
     print("Bot 正在运行...")
     print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
-    print("=" * 40)
+    print("=" * 50)
+    
+    # 测试PIL是否正常
+    try:
+        from PIL import Image
+        print("✅ PIL 导入成功")
+    except Exception as e:
+        print(f"❌ PIL 导入失败: {e}")
+    
     bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
