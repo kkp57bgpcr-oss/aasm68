@@ -22,6 +22,11 @@ from io import BytesIO
 import base64
 from PIL import Image
 import traceback
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -43,7 +48,56 @@ FACE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViM
 IMGLOC_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
 IMGLOC_URL = "https://imgloc.com/api/1/upload"
 
+# 创建bot实例
 bot = telebot.TeleBot(API_TOKEN)
+
+# ================= 强制清除所有冲突连接 =================
+logger.info("=" * 50)
+logger.info("开始强制清除Telegram连接冲突...")
+
+try:
+    # 1. 先移除webhook
+    logger.info("步骤1: 移除webhook...")
+    bot.remove_webhook()
+    time.sleep(2)
+    
+    # 2. 尝试多种方式获取并清除更新
+    logger.info("步骤2: 清除待处理更新...")
+    
+    # 方法1: 获取所有更新
+    updates = bot.get_updates(offset=-1, timeout=1, allowed_updates=[])
+    if updates:
+        last_id = updates[-1].update_id
+        logger.info(f"发现 {len(updates)} 条待处理更新，最新ID: {last_id}")
+        
+        # 方法2: 跳过所有更新
+        bot.get_updates(offset=last_id + 1, timeout=1)
+        logger.info(f"已跳过所有待处理更新")
+    else:
+        logger.info("没有待处理更新")
+    
+    # 3. 再次确认
+    time.sleep(1)
+    remaining = bot.get_updates(offset=-1, timeout=1)
+    if remaining:
+        logger.warning(f"仍有 {len(remaining)} 条更新残留")
+    else:
+        logger.info("所有更新已清除")
+    
+    # 4. 最终重置
+    logger.info("步骤3: 最终重置...")
+    bot.get_updates(offset=-1)
+    time.sleep(1)
+    
+    logger.info("✅ 强制清除完成，机器人可以正常启动")
+    
+except Exception as e:
+    logger.error(f"清除过程中出现错误: {e}")
+    traceback.print_exc()
+
+logger.info("=" * 50)
+# ================= 强制清除完成 =================
+
 user_points = {}
 user_states = {}
 generated_cache = {} 
@@ -525,6 +579,15 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
+    print("=" * 50)
     print("Bot 正在运行...")
     print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    print("=" * 50)
+    
+    try:
+        bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+    except Exception as e:
+        logger.error(f"运行错误: {e}")
+        time.sleep(5)
+        # 如果出错，尝试重新连接
+        bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
