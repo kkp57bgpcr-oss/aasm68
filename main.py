@@ -18,6 +18,7 @@ from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -33,6 +34,13 @@ POINTS_FILE = 'points.json'
 THREE_ELEMENTS_AUTH = "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpblR5cGUiOiJsb2dpbiIsImxvZ2luSWQiOiJhcHBfdXNlcjoxMTc1NDYwIiwicm5TdHIiOiJJSmVrU005UTlHc2hTV2RiVENQZ1VFbnpDN0MwWjFYZCJ9.vxjF6ShG81TM2hT-uiYyubHGOlEuCKC-m8nSmi7sayU"
 # 二要素接口授权 Token
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
+
+# 人脸核验接口授权 Token
+FACE_VERIFY_AUTH = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViMDQ2LWI1NzYtNGJlNi05MGVhLTllY2YxNGNiMjI4MiJ9.fIUe4cTbOnK-l68a8cF44glMCd32sWxphcftKah6d9PK4PAo7vV9AdJOByZMt_X8YouKC6cb0_R_IUOgUBNMFg"
+
+# 图床配置
+IMAGE_HOST_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
+IMAGE_HOST_URL = "https://imgloc.com/api/1/upload"
 
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
@@ -119,6 +127,91 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     except Exception as e:
         bot.send_message(chat_id, f"❌ 接口请求失败: {str(e)}")
 
+# ================= 人脸核验功能 =================
+
+def upload_photo_to_host(photo_bytes):
+    """上传照片到 imgloc.com 图床"""
+    try:
+        files = {'source': ('photo.jpg', photo_bytes, 'image/jpeg')}
+        data = {'key': IMAGE_HOST_API_KEY, 'format': 'json'}
+        
+        response = requests.post(IMAGE_HOST_URL, files=files, data=data, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status_code') == 200:
+                return result['image']['url']
+        return None
+    except Exception as e:
+        print(f"上传图片失败: {e}")
+        return None
+
+def upload_photo_to_telegraph(photo_bytes):
+    """备用：上传到 Telegraph"""
+    try:
+        url = "https://telegra.ph/upload"
+        files = {"file": ("photo.jpg", photo_bytes, "image/jpeg")}
+        response = requests.post(url, files=files, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result and len(result) > 0:
+                return f"https://telegra.ph{result[0]['src']}"
+        return None
+    except:
+        return None
+
+def face_verify_logic(chat_id, name, id_card, photo_url, uid):
+    """人脸核验逻辑"""
+    url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
+    headers = {
+        "Authorization": FACE_VERIFY_AUTH,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)",
+        "Referer": "https://servicewechat.com/wx2d2597151b9e8347/12/page-frame.html"
+    }
+    
+    payload = {
+        "carrierUser": {
+            "identityCard": id_card,
+            "nickName": name,
+            "address": "江苏省扬州市邗江区杨庙镇双庙村任巷组31号",
+            "identityvalidPeriodTo": "2036-08-26"
+        },
+        "sysAttachmentInfoList": [{"fileUrl": photo_url}]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        user_points[uid] -= 2.5
+        save_points()
+        
+        result = response.json()
+        
+        if result.get("code") == 200 or result.get("code") == "200":
+            message = (
+                f"✅ **人脸核验成功！**\n\n"
+                f"👤 姓名: {name}\n"
+                f"🆔 身份证: {id_card}\n"
+                f"🟢 核验结果: 通过\n\n"
+                f"已扣除 **2.5** 积分！\n"
+                f"当前余额: **{user_points[uid]:.2f}** 积分"
+            )
+        else:
+            msg = result.get("msg", "未知错误")
+            message = (
+                f"❌ **人脸核验失败**\n\n"
+                f"👤 姓名: {name}\n"
+                f"🆔 身份证: {id_card}\n"
+                f"🔴 失败原因: {msg}\n\n"
+                f"已扣除 **2.5** 积分！\n"
+                f"当前余额: **{user_points[uid]:.2f}** 积分"
+            )
+        
+        bot.send_message(chat_id, message, parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 人脸核验请求失败: {str(e)}")
+
 # ================= 3. UI/菜单函数 =================
 
 def get_id_check_code(id17):
@@ -188,7 +281,7 @@ def sms_bomb_cmd(message):
 
 # ================= 指令入口 =================
 
-@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'face'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
@@ -218,6 +311,54 @@ def handle_commands(message):
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入姓名 身份证")
+    elif cmd == 'face':
+        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)，请先充值！")
+        user_states[chat_id] = {'step': 'face_name'}
+        bot.send_message(chat_id, "📸 **人脸核验**\n\n请输入姓名：", parse_mode='Markdown')
+
+# ================= 处理照片 =================
+
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    uid, chat_id = message.from_user.id, message.chat.id
+    state = user_states.get(chat_id)
+    
+    if not state or state.get('step') != 'face_photo':
+        return bot.reply_to(message, "❌ 请先使用 /face 命令开始人脸核验")
+    
+    # 获取照片
+    try:
+        file_info = bot.get_file(message.photo[-1].file_id)
+        photo_bytes = bot.download_file(file_info.file_path)
+        
+        bot.send_message(chat_id, "📤 正在上传照片...")
+        
+        # 上传到图床
+        photo_url = upload_photo_to_host(photo_bytes)
+        
+        # 如果失败，尝试备用图床
+        if not photo_url:
+            bot.send_message(chat_id, "⚠️ 主图床上传失败，尝试备用图床...")
+            photo_url = upload_photo_to_telegraph(photo_bytes)
+        
+        if not photo_url:
+            del user_states[chat_id]
+            return bot.send_message(chat_id, "❌ 图片上传失败，请重试")
+        
+        bot.send_message(chat_id, f"✅ 图片已上传\n{photo_url}\n\n⏳ 正在进行人脸核验...")
+        
+        # 进行核验
+        name = state['name']
+        id_card = state['id_card']
+        
+        face_verify_logic(chat_id, name, id_card, photo_url, uid)
+        
+        del user_states[chat_id]
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 处理照片失败: {str(e)}")
+        if chat_id in user_states:
+            del user_states[chat_id]
 
 # ================= 自动识别逻辑 =================
 
@@ -282,6 +423,20 @@ def handle_all(message):
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and i: single_verify_2ys(chat_id, n, i, uid)
         else: bot.reply_to(message, "格式错误，请发送姓名 身份证")
+    
+    elif step == 'face_name':
+        # 保存姓名，等待身份证
+        user_states[chat_id].update({'step': 'face_id', 'name': text})
+        bot.send_message(chat_id, f"✅ 姓名: {text}\n\n请输入身份证号：")
+    
+    elif step == 'face_id':
+        # 保存身份证，等待照片
+        id_card = text.strip().upper()
+        if not re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', id_card):
+            return bot.send_message(chat_id, "❌ 身份证格式错误，请重新输入：")
+        
+        user_states[chat_id].update({'step': 'face_photo', 'id_card': id_card})
+        bot.send_message(chat_id, f"✅ 身份证: {id_card}\n\n📸 请发送照片（直接从相册发送图片）：")
         
     elif step == 'g_card':
         user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
@@ -327,7 +482,12 @@ def handle_callback(call):
             "常用号查询\n"
             "发送 /cyh 进行查询\n"
             "全天24h秒出 假1赔10000\n"
-            "每次查询扣除 1.5 积分 空不扣除积分"
+            "每次查询扣除 1.5 积分 空不扣除积分\n"
+            "——————————————————\n"
+            "人脸核验（企业级）\n"
+            "发送 /face 进行核验\n"
+            "全天24h秒出 毫秒级响应\n"
+            "每次核验扣除 2.5 积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
