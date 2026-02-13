@@ -382,10 +382,12 @@ def handle_all(message):
                 del user_states[chat_id]
             return
         else:
+            # 不在人脸核验状态，提示用户
+            bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
             return
     
     # 处理文本消息
-    text = message.text.strip()
+    text = message.text.strip() if message.text else ""
     if text.startswith('/'): 
         return
     
@@ -524,4 +526,5 @@ def handle_callback(call):
 
 if __name__ == '__main__':
     print("Bot 正在运行...")
+    print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
