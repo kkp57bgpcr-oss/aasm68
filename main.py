@@ -97,7 +97,6 @@ def upload_to_imgloc(image_bytes):
         
         if response.status_code == 200:
             result = response.json()
-            print(f"imgloc 响应: {result}")
             if result.get('status_code') == 200:
                 url = result['image']['url']
                 print(f"上传成功: {url}")
@@ -178,7 +177,6 @@ def verify_face(name, id_card, image_bytes):
         
         try:
             result = response.json()
-            print(f"核验结果: {result}")
         except:
             print("响应不是JSON格式")
             return {"success": False, "msg": "人脸核验不一致🔴"}
@@ -197,10 +195,15 @@ def verify_face(name, id_card, image_bytes):
 
 def handle_face_photo(message):
     """处理人脸核验的照片"""
+    print("\n" + "=" * 50)
+    print("进入 handle_face_photo 函数")
+    print(f"消息ID: {message.message_id}")
+    print(f"用户ID: {message.from_user.id}")
+    print(f"聊天ID: {message.chat.id}")
+    print("=" * 50)
+    
     uid = message.from_user.id
     chat_id = message.chat.id
-    
-    print(f"\n处理人脸核验照片 - 用户: {uid}, 聊天: {chat_id}")
     
     # 检查状态
     if chat_id not in user_states:
@@ -460,27 +463,36 @@ def handle_commands(message):
 def handle_all(message):
     uid, chat_id = message.from_user.id, message.chat.id
     
-    print(f"收到消息 - 类型: {message.content_type}, 用户: {uid}, 聊天: {chat_id}")
+    # 打印所有消息类型
+    print(f"\n收到消息 - 类型: {message.content_type}, 用户: {uid}, 聊天: {chat_id}")
     
-    # 处理照片消息
+    # 处理照片消息 - 放在最前面
     if message.content_type == 'photo':
-        print(f"收到照片消息，当前状态: {user_states.get(chat_id)}")
-        if chat_id in user_states and user_states[chat_id].get('step') == 'waiting_face_photo':
-            print("进入人脸核验照片处理")
-            handle_face_photo(message)
-        else:
-            print("不在人脸核验状态，忽略照片")
-            bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
+        print(f"📸 收到照片，当前状态: {user_states.get(chat_id)}")
+        
+        # 检查是否在人脸核验状态
+        if chat_id in user_states:
+            state = user_states[chat_id]
+            if state.get('step') == 'waiting_face_photo':
+                print("✅ 状态匹配，开始处理人脸核验照片")
+                handle_face_photo(message)
+                return
+        
+        # 不在人脸核验状态
+        print("❌ 不在人脸核验状态")
+        bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验\n流程：\n1. 发送 /rlhy\n2. 输入：姓名 身份证号\n3. 发送照片")
         return
     
     # 处理文本消息
     text = message.text.strip() if message.text else ""
-    print(f"文本内容: {text}")
     
-    if text.startswith('/'): 
+    # 忽略命令（已经在单独的handler处理）
+    if text.startswith('/'):
         return
     
-    # --- 1. 自动识别逻辑 ---
+    print(f"处理文本: {text}")
+    
+    # --- 自动识别逻辑 ---
     if chat_id not in user_states or not user_states[chat_id].get('step'):
         parts = re.split(r'[,，\s\n]+', text.strip())
         # A. 自动识别三要素
@@ -507,7 +519,7 @@ def handle_all(message):
             if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "❌ 积分不足(1.5)")
             return xiaowunb_query_logic(chat_id, text, uid)
 
-    # --- 2. 状态机逻辑 ---
+    # --- 状态机逻辑 ---
     state = user_states.get(chat_id)
     if not state: 
         return
@@ -580,7 +592,7 @@ def handle_all(message):
                 'name': n,
                 'id_card': i
             }
-            print(f"设置人脸核验状态: {user_states[chat_id]}")
+            print(f"✅ 设置人脸核验状态成功: {user_states[chat_id]}")
             bot.send_message(chat_id, f"✅ 已收到信息\n\n姓名: {n}\n身份证: {i}\n\n📸 请发送本人照片")
         else:
             bot.send_message(chat_id, "❌ 格式错误\n请发送：姓名 身份证号\n例如：张三 110101199001011234")
@@ -632,11 +644,4 @@ if __name__ == '__main__':
     print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
     print("=" * 50)
     
-    # 测试PIL是否正常
-    try:
-        from PIL import Image
-        print("✅ PIL 导入成功")
-    except Exception as e:
-        print(f"❌ PIL 导入失败: {e}")
-    
-    bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+    # 测试PIL是否
