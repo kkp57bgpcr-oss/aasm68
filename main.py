@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import base64
 from PIL import Image
+import traceback
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -382,7 +383,6 @@ def handle_all(message):
                 del user_states[chat_id]
             return
         else:
-            # 不在人脸核验状态，提示用户
             bot.reply_to(message, "❌ 请先发送 /rlhy 开始人脸核验")
             return
     
