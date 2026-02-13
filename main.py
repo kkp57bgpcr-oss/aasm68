@@ -18,6 +18,9 @@ from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
+import base64
+from PIL import Image
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -33,6 +36,11 @@ POINTS_FILE = 'points.json'
 THREE_ELEMENTS_AUTH = "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJsb2dpblR5cGUiOiJsb2dpbiIsImxvZ2luSWQiOiJhcHBfdXNlcjoxMTc1NDYwIiwicm5TdHIiOiJJSmVrU005UTlHc2hTV2RiVENQZ1VFbnpDN0MwWjFYZCJ9.vxjF6ShG81TM2hT-uiYyubHGOlEuCKC-m8nSmi7sayU"
 # 二要素接口授权 Token
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
+
+# 人脸核验配置
+FACE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViMDQ2LWI1NzYtNGJlNi05MGVhLTllY2YxNGNiMjI4MiJ9.fIUe4cTbOnK-l68a8cF44glMCd32sWxphcftKah6d9PK4PAo7vV9AdJOByZMt_X8YouKC6cb0_R_IUOgUBNMFg"
+IMGLOC_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
+IMGLOC_URL = "https://imgloc.com/api/1/upload"
 
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
@@ -56,7 +64,93 @@ def save_points():
     with open(POINTS_FILE, 'w') as f:
         json.dump({str(k): v for k, v in user_points.items()}, f)
 
-# ================= 2. 功能逻辑 =================
+# ================= 人脸核验功能 =================
+
+def upload_to_imgloc(image_bytes):
+    """上传到 imgloc 图床"""
+    try:
+        files = {'source': ('photo.jpg', image_bytes, 'image/jpeg')}
+        data = {
+            'key': IMGLOC_API_KEY,
+            'format': 'json'
+        }
+        
+        response = requests.post(IMGLOC_URL, files=files, data=data, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status_code') == 200:
+                return result['image']['url']
+        return None
+    except Exception as e:
+        print(f"imgloc上传失败: {e}")
+        return None
+
+def image_to_base64(image_bytes):
+    """图片转Base64"""
+    try:
+        # 压缩图片
+        img = Image.open(BytesIO(image_bytes))
+        img.thumbnail((1024, 1024))
+        output = BytesIO()
+        img.save(output, format='JPEG', quality=85)
+        compressed_bytes = output.getvalue()
+        
+        base64_str = base64.b64encode(compressed_bytes).decode('utf-8')
+        return f"data:image/jpeg;base64,{base64_str}"
+    except Exception as e:
+        print(f"Base64转换失败: {e}")
+        return None
+
+def verify_face(name, id_card, image_bytes):
+    """执行人脸核验"""
+    
+    # 先尝试 imgloc 上传
+    image_url = upload_to_imgloc(image_bytes)
+    
+    # 如果失败，用 Base64
+    if not image_url:
+        image_url = image_to_base64(image_bytes)
+    
+    if not image_url:
+        return {"success": False, "msg": "人脸核验不一致🔴"}
+    
+    # 核验接口
+    url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
+    
+    headers = {
+        "Authorization": FACE_AUTH_TOKEN,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)"
+    }
+    
+    payload = {
+        "carrierUser": {
+            "identityCard": id_card,
+            "nickName": name,
+            "address": "江苏省扬州市邗江区杨庙镇双庙村任巷组31号",
+            "identityvalidPeriodTo": "2036-08-26"
+        },
+        "sysAttachmentInfoList": [{"fileUrl": image_url}]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        
+        try:
+            result = response.json()
+        except:
+            return {"success": False, "msg": "人脸核验不一致🔴"}
+        
+        if str(result.get("code")) in ["200", 200]:
+            return {"success": True, "msg": "人脸核验一致🟢"}
+        else:
+            return {"success": False, "msg": "人脸核验不一致🔴"}
+            
+    except Exception as e:
+        return {"success": False, "msg": "人脸核验不一致🔴"}
+
+# ================= 原有功能逻辑 =================
 
 def xiaowunb_query_logic(chat_id, id_number, uid):
     base_url = "http://xiaowunb.top/cyh.php"
@@ -186,9 +280,75 @@ def sms_bomb_cmd(message):
         bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
     threading.Thread(target=do_bomb).start()
 
+# ================= 人脸核验处理函数 =================
+
+def handle_face_photo(message):
+    """处理人脸核验的照片"""
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    
+    # 检查状态
+    if chat_id not in user_states or user_states[chat_id].get('step') != 'waiting_face_photo':
+        return
+    
+    state = user_states[chat_id]
+    
+    # 扣除积分
+    if user_points.get(uid, 0.0) < 0.1:
+        bot.send_message(chat_id, "❌ 积分不足，需要 0.1 积分")
+        del user_states[chat_id]
+        return
+    
+    bot.send_message(chat_id, "⏳ 正在核验，请稍候...")
+    
+    try:
+        # 获取照片
+        photos = message.photo
+        photo = photos[-1]  # 使用最大尺寸
+        file_id = photo.file_id
+        
+        # 下载照片
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        # 执行核验
+        result = verify_face(state['name'], state['id_card'], downloaded_file)
+        
+        # 扣除积分
+        user_points[uid] -= 0.1
+        save_points()
+        
+        # 发送结果
+        if result["success"]:
+            bot.send_message(
+                chat_id,
+                f"✅ 核验成功!\n\n"
+                f"姓名: {state['name']}\n"
+                f"身份证: {state['id_card']}\n"
+                f"结果:{result['msg']}\n\n"
+                f"已扣除 0.1 积分\n"
+                f"当前余额: {user_points[uid]:.2f} 积分"
+            )
+        else:
+            bot.send_message(
+                chat_id,
+                f"❌ 核验失败!\n\n"
+                f"姓名: {state['name']}\n"
+                f"身份证: {state['id_card']}\n"
+                f"结果:{result['msg']}\n\n"
+                f"已扣除 0.1 积分\n"
+                f"当前余额: {user_points[uid]:.2f} 积分"
+            )
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 处理失败: {str(e)}")
+    finally:
+        # 清除状态
+        del user_states[chat_id]
+
 # ================= 指令入口 =================
 
-@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'rlhy'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
@@ -218,12 +378,20 @@ def handle_commands(message):
     elif cmd == '2ys':
         if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入姓名 身份证")
+    elif cmd == 'rlhy':
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足，需要 0.1 积分")
+        user_states[chat_id] = {'step': 'rlhy_name'}; bot.send_message(chat_id, "📝 请输入姓名和身份证号\n例如：张三 110101199001011234")
 
 # ================= 自动识别逻辑 =================
 
 @bot.message_handler(func=lambda m: True)
 def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
+    
+    # 优先处理人脸核验的照片
+    if message.photo and chat_id in user_states and user_states[chat_id].get('step') == 'waiting_face_photo':
+        return handle_face_photo(message)
+    
     if text.startswith('/'): return 
     
     # --- 1. 自动识别逻辑 ---
@@ -297,6 +465,24 @@ def handle_all(message):
         with open("铭.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
         with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！消耗0.1积分")
         del user_states[chat_id]
+        
+    elif step == 'rlhy_name':
+        # 解析姓名和身份证
+        parts = re.split(r'[,，\s\n]+', text.strip())
+        n, i = None, None
+        for x in parts:
+            if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+            elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+        
+        if n and i:
+            user_states[chat_id] = {
+                'step': 'waiting_face_photo',
+                'name': n,
+                'id_card': i
+            }
+            bot.send_message(chat_id, f"✅ 已收到信息\n\n姓名: {n}\n身份证: {i}\n\n📸 请发送本人照片")
+        else:
+            bot.send_message(chat_id, "❌ 格式错误\n请发送：姓名 身份证号\n例如：张三 110101199001011234")
 
 # ================= 按钮点击事件 =================
 
@@ -327,7 +513,11 @@ def handle_callback(call):
             "常用号查询\n"
             "发送 /cyh 进行查询\n"
             "全天24h秒出 假1赔10000\n"
-            "每次查询扣除 1.5 积分 空不扣除积分"
+            "每次查询扣除 1.5 积分 空不扣除积分\n"
+            "——————————————————\n"
+            "人脸核验\n"
+            "发送 /rlhy 进行操作\n"
+            "每次核验扣除 0.1 积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
@@ -337,4 +527,5 @@ def handle_callback(call):
 
 if __name__ == '__main__':
     print("Bot 正在运行...")
+    print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
