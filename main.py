@@ -420,7 +420,7 @@ def sms_bomb_cmd(message):
 
 # ================= 指令入口 =================
 
-@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'rlhy'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'rlhy', 'state'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
@@ -456,6 +456,34 @@ def handle_commands(message):
         if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足，需要 0.1 积分")
         user_states[chat_id] = {'step': 'rlhy_name'}; bot.send_message(chat_id, "📝 请输入姓名和身份证号\n例如：张三 110101199001011234")
         print(f"设置状态: {user_states[chat_id]}")
+    elif cmd == 'state':
+        # 查看当前状态
+        if chat_id in user_states:
+            state = user_states[chat_id]
+            step = state.get('step', 'unknown')
+            
+            if step == 'waiting_face_photo':
+                info = (f"📸 等待照片\n"
+                       f"姓名: {state.get('name', '未知')}\n"
+                       f"身份证: {state.get('id_card', '未知')}")
+            elif step == 'rlhy_name':
+                info = "📝 等待输入姓名和身份证"
+            elif step == 'v_3ys':
+                info = "🔍 等待输入三要素 (姓名 手机号 身份证)"
+            elif step == 'v_2ys':
+                info = "🔍 等待输入二要素 (姓名 身份证)"
+            elif step == 'cyh_id':
+                info = "🔍 等待输入身份证号查询"
+            elif step == 'g_card':
+                info = "🔍 等待输入身份证号补齐"
+            elif step == 'g_sex':
+                info = f"🔍 等待选择性别 (当前身份证: {state.get('card', '未知')})"
+            else:
+                info = f"当前步骤: {step}"
+            
+            bot.reply_to(message, f"当前状态:\n{info}")
+        else:
+            bot.reply_to(message, "当前无状态")
 
 # ================= 消息处理 =================
 
@@ -621,27 +649,4 @@ def handle_callback(call):
             "名字-手机号-身份证核验（企业级）\n"
             "全天24h秒出 毫秒级响应\n"
             "发送 /3ys 进行核验\n"
-            "每次核验扣除 0.05 积分\n"
-            "——————————————————\n"
-            "常用号查询\n"
-            "发送 /cyh 进行查询\n"
-            "全天24h秒出 假1赔10000\n"
-            "每次查询扣除 1.5 积分 空不扣除积分\n"
-            "——————————————————\n"
-            "人脸核验\n"
-            "发送 /rlhy 进行操作\n"
-            "每次核验扣除 0.1 积分"
-        )
-        bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
-    elif call.data == "view_pay":
-        bot.edit_message_text("🛍️ 请选择充值方式：\n1 USDT = 1 积分", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
-    elif call.data == "back_to_main":
-        bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
-
-if __name__ == '__main__':
-    print("=" * 50)
-    print("Bot 正在运行...")
-    print("新增指令: /rlhy - 人脸核验 (0.1积分/次)")
-    print("=" * 50)
-    
-    # 测试PIL是否
+            "每次核验扣除
