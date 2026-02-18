@@ -81,19 +81,31 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
     try:
         response = requests.get(url, params=params, timeout=15)
         response.encoding = 'utf-8'
+        
+        # 扣除积分
         user_points[uid] -= 0.05
         save_points()
         
-        res_text = response.text if response.text.strip() else "三要素核验无结果"
+        # 获取结果并清理广告信息
+        raw_res = response.text.strip()
+        # 移除包含“小无 API”、“官方频道”、“客服”等广告字眼
+        clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', raw_res, flags=re.DOTALL).strip()
         
-        message = (f"📑 **三要素核验结果**\n\n"
-                   f"姓名：{name}\n"
+        # 统一判断核验状态图标
+        if "成功" in clean_res or "一致" in clean_res:
+            res_status = "三要素核验成功✅"
+        else:
+            res_status = "三要素核验失败❌"
+        
+        # 按照要求的 UI 格式构建消息
+        message = (f"名字：{name}\n"
                    f"手机号：{phone}\n"
                    f"身份证：{id_card}\n"
-                   f"————————————————\n"
-                   f"结果：\n{res_text}\n\n"
-                   f"已扣除 **0.05** 积分！\n当前余额：**{user_points[uid]:.2f}**")
-        bot.send_message(chat_id, message, parse_mode='Markdown')
+                   f"结果：{res_status}\n\n"
+                   f"已扣除 0.05 积分！\n"
+                   f"当前积分余额：{user_points[uid]:.2f} 积分")
+        
+        bot.send_message(chat_id, message)
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ 三要素核验接口请求失败: {str(e)}")
 
