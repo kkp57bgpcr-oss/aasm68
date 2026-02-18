@@ -63,16 +63,16 @@ def xiaowunb_query_logic(chat_id, id_number, uid):
         response = requests.get(base_url, params=params, timeout=10)
         response.encoding = 'utf-8'
         
-        # 扣除积分
-        user_points[uid] -= 1.5
-        save_points()
-        
         raw_text = response.text.strip()
-        
         # 提取手机号逻辑 (匹配 11 位数字)
         phones = re.findall(r'1[3-9]\d{9}', raw_text)
         
+        # 判断是否有结果并执行扣费
         if phones:
+            # 有结果，扣除 1.5 积分
+            user_points[uid] -= 1.5
+            save_points()
+            
             # 去重处理
             unique_phones = list(dict.fromkeys(phones))
             phone_list_str = ""
@@ -80,14 +80,17 @@ def xiaowunb_query_logic(chat_id, id_number, uid):
                 phone_list_str += f"{idx}、{p}\n"
             
             result_body = f"匹配到 {len(unique_phones)} 个有效手机号:\n{phone_list_str}"
+            cost_str = f"已扣除 1.5 积分！"
         else:
-            result_body = "未匹配到有效手机号"
+            # 无结果，不扣分
+            result_body = "未匹配到有效手机号\n"  # 增加一行空行
+            cost_str = "查询无结果，未扣除积分。"
 
         # 按照要求的常用号 UI 格式构建消息
         result_message = (
             f"身份证查询结果:\n\n"
             f"{result_body}\n"
-            f"已扣除 1.5 积分！\n"
+            f"{cost_str}\n"
             f"当前余额: {user_points[uid]:.2f}"
         )
         
@@ -96,40 +99,25 @@ def xiaowunb_query_logic(chat_id, id_number, uid):
         bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    # 三要素接口地址
     url = "http://xiaowunb.top/3ys.php"
-    params = {
-        "name": name,
-        "sfz": id_card,
-        "sjh": phone
-    }
+    params = {"name": name, "sfz": id_card, "sjh": phone}
     try:
         response = requests.get(url, params=params, timeout=15)
         response.encoding = 'utf-8'
-        
-        # 扣费逻辑
         user_points[uid] -= 0.05
         save_points()
-        
-        # 获取结果并清理广告
         raw_res = response.text.strip()
-        # 移除包含“小无 API”等广告字眼
         clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', raw_res, flags=re.DOTALL).strip()
-        
-        # 统一核验状态图标
         if "成功" in clean_res or "一致" in clean_res:
             res_status = "三要素核验成功✅"
         else:
             res_status = "三要素核验失败❌"
-        
-        # 按照要求的三要素 UI 格式输出
         message = (f"名字：{name}\n"
                    f"手机号：{phone}\n"
                    f"身份证：{id_card}\n"
                    f"结果：{res_status}\n\n"
                    f"已扣除 0.05 积分！\n"
                    f"当前积分余额：{user_points[uid]:.2f} 积分")
-        
         bot.send_message(chat_id, message)
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ 系统异常: {str(e)}")
@@ -260,7 +248,6 @@ def handle_all(message):
     if chat_id not in user_states or not user_states[chat_id].get('step'):
         parts = re.split(r'[,，\s\n]+', text.strip())
         
-        # A. 自动识别三要素
         if len(parts) >= 3:
             n, p, i = None, None, None
             for x in parts:
@@ -271,7 +258,6 @@ def handle_all(message):
                 if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "❌ 积分不足(0.05)")
                 return query_3ys_logic(chat_id, n, i, p, uid)
         
-        # B. 自动识别二要素
         if len(parts) == 2:
             n, i = None, None
             for x in parts:
@@ -281,7 +267,6 @@ def handle_all(message):
                 if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "❌ 积分不足(0.01)")
                 return single_verify_2ys(chat_id, n, i, uid)
                 
-        # C. 常用号
         if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
             if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "❌ 积分不足(1.5)")
             return xiaowunb_query_logic(chat_id, text, uid)
