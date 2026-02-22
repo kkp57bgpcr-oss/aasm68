@@ -207,12 +207,13 @@ def sms_bomb_cmd(message):
 
 # ================= 指令入口 =================
 
-@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'cp'])
+@bot.message_handler(commands=['cyh', '3ys', 'admin', 'add', 'start', 'bq', '2ys', 'cp', 'add_sign', 'list_sign', 'del_sign'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
-    cmd = message.text.split()[0][1:]
+    cmd_parts = message.text.split()
+    cmd = cmd_parts[0][1:]
     
-    if cmd in ['add', 'admin'] and uid != ADMIN_ID:
+    if cmd in ['add', 'admin', 'add_sign', 'list_sign', 'del_sign'] and uid != ADMIN_ID:
         return bot.reply_to(message, "🤡你没有权限使用该指令…")
 
     if cmd == 'start':
@@ -224,6 +225,39 @@ def handle_commands(message):
             user_points[tid] = user_points.get(tid, 0.0) + amt; save_points()
             bot.reply_to(message, f"✅ 已充值！当前余额: `{user_points[tid]:.2f}`")
         except: pass
+
+    # --- 新增：签到管理指令 ---
+    elif cmd == 'add_sign' and uid == ADMIN_ID:
+        parts = message.text.split(maxsplit=3)
+        if len(parts) < 4: return bot.reply_to(message, "用法: `/add_sign 名字 @用户名 指令`")
+        name, bot_user, sign_cmd = parts[1], parts[2].replace('@', ''), parts[3]
+        config_path = 'sign_targets.json'
+        data = []
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f: data = json.load(f)
+        data.append({"name": name, "bot_username": bot_user, "command": sign_cmd})
+        with open(config_path, 'w', encoding='utf-8') as f: json.dump(data, f, ensure_ascii=False, indent=4)
+        bot.reply_to(message, f"✅ 已添加签到目标: {name}")
+
+    elif cmd == 'list_sign' and uid == ADMIN_ID:
+        config_path = 'sign_targets.json'
+        if not os.path.exists(config_path): return bot.reply_to(message, "📋 列表为空")
+        with open(config_path, 'r', encoding='utf-8') as f: data = json.load(f)
+        res = "📋 自动签到列表:\n"
+        for i, b in enumerate(data, 1): res += f"{i}. {b['name']} (@{b['bot_username']}) - `{b['command']}`\n"
+        bot.reply_to(message, res, parse_mode='Markdown')
+
+    elif cmd == 'del_sign' and uid == ADMIN_ID:
+        if len(cmd_parts) < 2: return bot.reply_to(message, "用法: `/del_sign 机器人用户名` (不带@)")
+        target = cmd_parts[1].replace('@', '')
+        config_path = 'sign_targets.json'
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f: data = json.load(f)
+            new_data = [b for b in data if b['bot_username'] != target]
+            with open(config_path, 'w', encoding='utf-8') as f: json.dump(new_data, f, ensure_ascii=False, indent=4)
+            bot.reply_to(message, f"🗑️ 已尝试删除 @{target}")
+
+    # --- 原有指令逻辑 ---
     elif cmd == 'cyh':
         if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
