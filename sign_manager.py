@@ -5,14 +5,13 @@ import json
 import os
 
 # ============ 核心配置 ============
-# 专门用于签到管理的新 Token
 API_TOKEN = '8505048236:AAFHPC3448Gti60whSAC9mak_oKzd7BN1eY'
-ADMIN_ID = 6649617045  # 确保这是你的 Telegram ID
+ADMIN_ID = 6649617045
 SIGN_FILE = 'sign_targets.json'
 
 bot = telebot.TeleBot(API_TOKEN)
 
-# 初始化 JSON 文件
+# 确保配置文件存在
 if not os.path.exists(SIGN_FILE):
     with open(SIGN_FILE, 'w', encoding='utf-8') as f:
         json.dump([], f)
@@ -28,12 +27,14 @@ def save_data(data):
     with open(SIGN_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# ============ 指令逻辑 ============
+# ============ 指令处理 (UI 保持原样) ============
 
 @bot.message_handler(commands=['start', 'zl'])
 def show_menu(message):
-    if message.from_user.id != ADMIN_ID:
-        return # ID不匹配则不响应
+    if message.from_user.id != ADMIN_ID: 
+        # UI不动，但在后台打印是谁在尝试访问，方便你排查 ID
+        print(f"Railway Log: 拦截到访问 ID 为 {message.from_user.id}")
+        return
     menu = (
         "🤖 **自动签到控制系统**\n\n"
         "📋 **任务查看:**\n"
@@ -86,11 +87,7 @@ def del_bot(message):
     save_data(new_data)
     bot.reply_to(message, f"🗑️ 已移除: @{target}")
 
-# ID 测试指令：如果你发现不理你，发这个看 ID 对不对
-@bot.message_handler(commands=['myid'])
-def myid(message):
-    bot.reply_to(message, f"你的 ID 是: `{message.from_user.id}`", parse_mode='Markdown')
-
 if __name__ == '__main__':
-    print("✅ 签到管理后台已运行 (使用新Token)...")
-    bot.infinity_polling()
+    # 为了防止 Railway 多实例冲突，强制使用 skip_pending
+    print("Railway 节点启动成功，正在监听指令...")
+    bot.infinity_polling(skip_pending=True)
