@@ -374,15 +374,18 @@ def handle_callback(call):
     elif call.data == "back_to_main":
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
 
-# ================= 7. 启动入口 (双线程运行) =================
+# ================= 7. 启动入口 (Railway 适配版) =================
 
 if __name__ == '__main__':
-    # 启动 Flask API 线程
-    flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
+    # 获取 Railway 分配的动态端口
+    railway_port = int(os.environ.get("PORT", 5000))
+    
+    # 启动 Flask API 线程，绑定 Railway 要求的端口
+    flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=railway_port))
     flask_thread.daemon = True
     flask_thread.start()
     
-    print("🚀 API 已启动 (端口 5000)")
+    print(f"🚀 API 已启动 (端口: {railway_port})")
     print("🤖 Bot 正在运行...")
     
     # 启动机器人主循环
