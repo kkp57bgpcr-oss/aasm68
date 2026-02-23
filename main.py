@@ -77,11 +77,9 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
             return
 
         # 3. 核验接口
-        t1 = time.time()
         base_url = "https://xiaowunb.top/rlhy.php"
         params = {"name": name, "sfz": sfz, "tp": tp_url, "key": "小无爱公益"}
         res_text = requests.get(base_url, params=params, timeout=25).text
-        duration = round(time.time() - t1, 4)
         
         # 4. 判定结果
         if "验证成功" in res_text:
@@ -95,8 +93,9 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         user_points[uid] -= 0.1
         save_points()
 
+        # 去掉了耗时行后的结果文本
         result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
-                  f"单次验证耗时: {duration} 秒\n已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
+                  f"已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
         
         # 删除“正在核验”提示，弹出新结果
         bot.delete_message(chat_id, wait_msg.message_id)
@@ -285,6 +284,11 @@ def handle_callback(call):
             "全天24h秒出 毫秒级响应\n"
             "发送 /3ys 进行核验\n"
             "每次核验扣除 0.05 积分\n"
+            "——————————————————\n"
+            "车牌号查询\n"
+            "发送 /cp 进行查询\n"
+            "全天24h秒出 假1赔10000\n"
+            "每次查询扣除 2.5 积分 空不扣除积分\n"
             "——————————————————\n"
             "常用号查询\n"
             "发送 /cyh 进行查询\n"
