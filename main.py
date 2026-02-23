@@ -76,9 +76,11 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
             return
 
         # 3. 核验接口
+        t1 = time.time()
         base_url = "https://xiaowunb.top/rlhy.php"
         params = {"name": name, "sfz": sfz, "tp": tp_url, "key": "小无爱公益"}
         res_text = requests.get(base_url, params=params, timeout=25).text
+        duration = round(time.time() - t1, 4)
         
         # 4. 判定结果
         if "验证成功" in res_text:
@@ -91,13 +93,12 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         user_points[uid] -= 0.1
         save_points()
 
-        # 修改后的结果输出：去掉了耗时行
         result = (f"{status_head}\n\n"
                   f"*姓名：* {name}\n"
                   f"*身份证：* `{sfz}`\n"
                   f"*结果：* {res_desc}\n\n"
-                  f"已扣除 *0.1* 积分！\n"
-                  f"当前余额：`{user_points[uid]:.2f}`")
+                  f"单次验证耗时：{duration} 秒\n"
+                  f"已扣除 *0.1* 积分！当前余额：`{user_points[uid]:.2f}`")
         
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, result, parse_mode='Markdown')
@@ -183,7 +184,7 @@ def get_help_markup():
 def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     username = f"@{source.from_user.username}" if hasattr(source.from_user, 'username') and source.from_user.username else "未设置"
-    return (f"*Welcome to use!*\n\n"
+    return (f"*Admin@铭*\n\n"
             f"*用户 ID:* `{uid}`\n"
             f"*用户名称:* {first_name}\n"
             f"*用户名:* {username}\n"
@@ -280,9 +281,11 @@ def handle_all_text(message):
     if state.get('step') == 'cyh_id':
         del user_states[chat_id]; return xiaowunb_query_logic(chat_id, text, uid)
 
+    # 自动识别逻辑... (保持原样但加上 parse_mode)
     parts = re.split(r'[,，\s\n]+', text)
     if len(parts) >= 3:
-        pass 
+        # 三要素逻辑
+        pass # 原逻辑已在上面 single_verify 等函数中处理
 
 if __name__ == '__main__':
     print("Bot 正在运行...")
