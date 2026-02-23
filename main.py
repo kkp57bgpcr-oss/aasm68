@@ -58,6 +58,7 @@ def save_points():
 # ================= 2. 功能逻辑 =================
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
+    # 发送中间提示
     wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     try:
         # 1. 下载图片
@@ -90,12 +91,17 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         else:
             status_head, res_desc = "❌核验失败!", "核验未通过🔴"
 
-        user_points[uid] -= 5.0
+        # 扣费 0.1
+        user_points[uid] -= 0.1
         save_points()
 
         result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
-                  f"单次验证耗时: {duration} 秒\n已扣除 5.0 积分！当前余额: {user_points[uid]:.2f}")
-        bot.edit_message_text(result, chat_id, wait_msg.message_id)
+                  f"单次验证耗时: {duration} 秒\n已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
+        
+        # 删除“正在核验”提示，弹出新结果
+        bot.delete_message(chat_id, wait_msg.message_id)
+        bot.send_message(chat_id, result)
+
     except Exception as e:
         bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
@@ -185,7 +191,7 @@ def handle_commands(message):
         if uid not in user_points: user_points[uid] = 0.0
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
     elif cmd == 'rlhy':
-        if user_points.get(uid, 0.0) < 5.0: return bot.reply_to(message, "❌ 积分不足(5.0)")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足(0.1)")
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
         bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
     elif cmd == 'cyh':
@@ -208,7 +214,7 @@ def handle_photo(message):
     
     if (user_states.get(chat_id, {}).get('step') == 'awaiting_rlhy') or len(parts) >= 2:
         if len(parts) < 2: return bot.reply_to(message, "⚠️ 请在发送图片备注中输入：姓名 身份证")
-        if user_points.get(uid, 0.0) < 5.0: return bot.reply_to(message, "❌ 积分不足")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足(0.1)")
         if chat_id in user_states: del user_states[chat_id]
         threading.Thread(target=process_rlhy, args=(chat_id, parts[0], parts[1], message.photo[-1].file_id, uid)).start()
 
@@ -265,9 +271,10 @@ def handle_callback(call):
             "发送 /sms 手机号\n"
             "每次消耗 3.5 积分\n"
             "——————————————————\n"
-            "人脸核验\n"
-            "发送 /rlhy 进行核验\n"
-            "每次核验扣除 5.0 积分\n"
+            "企业级人脸核验\n"
+            "发送 /rlhy 先选择一张待核验的图片\n"
+            "附带输入：姓名 身份证号\n"
+            "每次核验扣除 0.1 积分\n"
             "——————————————————\n"
             "名字-身份证核验（企业级）\n"
             "全天24h秒出 毫秒级响应\n"
