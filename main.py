@@ -87,7 +87,7 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         save_points()
 
         result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
-                  f"已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
+                  f"已扣除 0.1 积分！\n当前余额: {user_points[uid]:.2f}")
         
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, result)
