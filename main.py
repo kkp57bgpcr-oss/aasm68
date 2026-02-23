@@ -96,7 +96,7 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         save_points()
 
         result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
-                  f"单次验证耗时: {duration} 秒\n已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
+                  f"单次验证耗时: {duration} 秒\n已扣除 0.1 积分！\n当前余额: {user_points[uid]:.2f}")
         
         # 删除“正在核验”提示，弹出新结果
         bot.delete_message(chat_id, wait_msg.message_id)
