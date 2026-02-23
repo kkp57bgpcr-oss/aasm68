@@ -58,14 +58,10 @@ def save_points():
 # ================= 2. 功能逻辑 =================
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
-    # 发送中间提示
     wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     try:
-        # 1. 下载图片
         file_info = bot.get_file(photo_file_id)
         img_bytes = bot.download_file(file_info.file_path)
-        
-        # 2. 上传图床
         files = {'source': ('face.jpg', img_bytes, 'image/jpeg')}
         data = {'key': IMAGE_HOST_API_KEY, 'format': 'json'}
         up_res = requests.post(IMAGE_HOST_URL, files=files, data=data, timeout=30).json()
@@ -76,12 +72,10 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
             bot.edit_message_text("❌ 图床上传失败", chat_id, wait_msg.message_id)
             return
 
-        # 3. 核验接口
         base_url = "https://xiaowunb.top/rlhy.php"
         params = {"name": name, "sfz": sfz, "tp": tp_url, "key": "小无爱公益"}
         res_text = requests.get(base_url, params=params, timeout=25).text
         
-        # 4. 判定结果
         if "验证成功" in res_text:
             status_head, res_desc = "✅核验成功!", "人脸核验通过🟢"
         elif "活体" in res_text or "采集失败" in res_text:
@@ -89,20 +83,28 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         else:
             status_head, res_desc = "❌核验失败!", "核验未通过🔴"
 
-        # 扣费 0.1
         user_points[uid] -= 0.1
         save_points()
 
-        # 去掉了耗时行后的结果文本
         result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
                   f"已扣除 0.1 积分！当前余额: {user_points[uid]:.2f}")
         
-        # 删除“正在核验”提示，弹出新结果
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, result)
-
     except Exception as e:
         bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
+
+# 短信测压线程函数
+def run_sms_task(chat_id, phone, uid):
+    try:
+        # 调用导入的 sms_list 中的方法，这里根据常见逻辑假设为 sms_list.attack
+        # 如果你的 sms_list 内部函数名不同，请自行微调下一行
+        sms_list.attack(phone) 
+        user_points[uid] -= 3.5
+        save_points()
+        bot.send_message(chat_id, f"✅ 短信测压任务完成\n目标：{phone}\n已扣除 3.5 积分！")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ 短信任务失败: {str(e)}")
 
 def cp_query_logic(chat_id, car_no, uid):
     url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
@@ -184,7 +186,8 @@ def get_main_text(source, uid, pts):
 @bot.message_handler(commands=['start', 'rlhy', 'cyh', '3ys', '2ys', 'cp', 'add', 'sms'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
-    cmd = message.text.split()[0][1:]
+    cmd_parts = message.text.split()
+    cmd = cmd_parts[0][1:]
     
     if cmd == 'start':
         if uid not in user_points: user_points[uid] = 0.0
@@ -193,6 +196,17 @@ def handle_commands(message):
         if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足(0.1)")
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
         bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
+    elif cmd == 'sms':
+        if len(cmd_parts) < 2: return bot.reply_to(message, "请输入格式：/sms 手机号")
+        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "❌ 积分不足(3.5)")
+        bot.send_message(chat_id, "🚀 测压指令已下达，正在启动...")
+        threading.Thread(target=run_sms_task, args=(chat_id, cmd_parts[1], uid)).start()
+    elif cmd == '2ys':
+        bot.send_message(chat_id, "请输入：姓名 身份证")
+        user_states[chat_id] = {'step': 'v_2ys'}
+    elif cmd == '3ys':
+        bot.send_message(chat_id, "请输入：姓名 身份证 手机号")
+        user_states[chat_id] = {'step': 'v_3ys'}
     elif cmd == 'cyh':
         if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
@@ -201,7 +215,7 @@ def handle_commands(message):
         user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
     elif cmd == 'add' and uid == ADMIN_ID:
         try:
-            p = message.text.split(); user_points[int(p[1])] = user_points.get(int(p[1]), 0.0) + float(p[2]); save_points()
+            user_points[int(cmd_parts[1])] = user_points.get(int(cmd_parts[1]), 0.0) + float(cmd_parts[2]); save_points()
             bot.reply_to(message, "✅ 充值成功")
         except: pass
 
@@ -222,11 +236,21 @@ def handle_all_text(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return
 
-    # 状态机
     state = user_states.get(chat_id, {})
-    if state.get('step') == 'v_cp':
+    # 处理 2要素/3要素 的手动输入状态
+    if state.get('step') == 'v_2ys':
+        parts = re.split(r'[,，\s\n]+', text)
+        if len(parts) >= 2:
+            del user_states[chat_id]
+            return single_verify_2ys(chat_id, parts[0], parts[1], uid)
+    elif state.get('step') == 'v_3ys':
+        parts = re.split(r'[,，\s\n]+', text)
+        if len(parts) >= 3:
+            del user_states[chat_id]
+            return query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
+    elif state.get('step') == 'v_cp':
         del user_states[chat_id]; return cp_query_logic(chat_id, text.upper(), uid)
-    if state.get('step') == 'cyh_id':
+    elif state.get('step') == 'cyh_id':
         del user_states[chat_id]; return xiaowunb_query_logic(chat_id, text, uid)
 
     # 自动识别
