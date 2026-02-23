@@ -5,15 +5,23 @@ import re
 import threading
 import json
 import os
+import base64
 import itertools
 import binascii
 import random
 import concurrent.futures
 import inspect  
 import urllib.parse
-import sms_list 
-import sms_list_new
-from sms_list import *
+from flask import Flask, request  # 新增 Flask 依赖
+
+# 如果你的环境中没有这两个本地文件，请确保它们存在
+try:
+    import sms_list 
+    import sms_list_new
+    from sms_list import *
+except ImportError:
+    pass
+
 from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
@@ -29,12 +37,16 @@ ADMIN_ID = 6649617045
 ADMIN_USERNAME = "@aaSm68"
 POINTS_FILE = 'points.json'
 
+# API 专用配置 (你之前要求的 API 校验逻辑)
+ADMIN_KEY_API = "铭666"
+
 # 外部接口配置
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
 IMAGE_HOST_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
 IMAGE_HOST_URL = "https://imgloc.com/api/1/upload"
 
 bot = telebot.TeleBot(API_TOKEN)
+app = Flask(__name__)  # 初始化 Flask
 user_points = {}
 user_states = {}
 
@@ -55,7 +67,47 @@ def save_points():
     with open(POINTS_FILE, 'w') as f:
         json.dump({str(k): v for k, v in user_points.items()}, f)
 
-# ================= 2. 功能逻辑 =================
+# ================= 2. API 网页端功能 (保持之前的逻辑) =================
+
+def check_api_key(user_key):
+    if user_key == ADMIN_KEY_API:
+        return True, "2099年12月31日 (永久管理)"
+    try:
+        missing_padding = len(user_key) % 4
+        if missing_padding: user_key += '=' * (4 - missing_padding)
+        decoded = base64.b64decode(user_key.encode()).decode('utf-8')
+        if '_' in decoded:
+            prefix, expire_ts = decoded.split('_')
+            if prefix == "铭":
+                ts = int(expire_ts)
+                time_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))
+                return (True, time_str) if time.time() < ts else (False, "已过期")
+    except: pass
+    return False, "无效Key"
+
+@app.route('/rlhy.php')
+def api_route():
+    name = request.args.get('name', '')
+    sfz = request.args.get('sfz', '')
+    tp = request.args.get('tp', '')
+    key = request.args.get('key', '')
+    ok, time_info = check_api_key(key)
+    if not ok: return f"❌ 拒绝访问: {time_info}", 403
+
+    # 执行核验逻辑
+    url = "https://www.cjhyzx.com/api/vx/actual/carrier/center/realPersonAuthentication"
+    headers = {"Authorization": "Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6IjA5YjViMDQ2LWI1NzYtNGJlNi05MGVhLTllY2YxNGNiMjI4MiJ9.fIUe4cTbOnK-l68a8cF44glMCd32sWxphcftKah6d9PK4PAo7vV9AdJOByZMt_X8YouKC6cb0_R_IUOgUBNMFg", "Content-Type": "application/json"}
+    payload = {"carrierUser": {"identityCard": sfz, "nickName": name}, "sysAttachmentInfoList": [{"fileUrl": tp}]}
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=20).json()
+        is_success = str(res.get("code")) == "200"
+        res_text = "人脸核验通过🟢" if is_success else f"核验未通过🔴 ({res.get('msg')})"
+    except: res_text = "接口请求失败"
+
+    return f"""<div style="font-family:sans-serif;padding:20px;line-height:1.8;">
+                ✅ 核验结果<br><br>姓名: {name}<br>身份证: {sfz}<br>结果: {res_text}<br><br>卡密到期时间: {time_info}</div>"""
+
+# ================= 3. 机器人功能逻辑 (保持不变) =================
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
     wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
@@ -94,11 +146,8 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
     except Exception as e:
         bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
-# 短信测压线程函数
 def run_sms_task(chat_id, phone, uid):
     try:
-        # 调用导入的 sms_list 中的方法，这里根据常见逻辑假设为 sms_list.attack
-        # 如果你的 sms_list 内部函数名不同，请自行微调下一行
         sms_list.attack(phone) 
         user_points[uid] -= 3.5
         save_points()
@@ -161,7 +210,7 @@ def single_verify_2ys(chat_id, name, id_card, uid):
         bot.send_message(chat_id, f"姓名: **{name}**\n身份证: **{id_card}**\n结果: **{res_type}**\n\n已扣除 **0.01** 积分！\n当前余额：**{user_points[uid]:.2f}**", parse_mode='Markdown')
     except Exception as e: bot.send_message(chat_id, f"❌ 接口失败: {str(e)}")
 
-# ================= 3. UI 菜单 =================
+# ================= 4. UI 菜单 (保持不变) =================
 
 def get_main_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -181,7 +230,7 @@ def get_main_text(source, uid, pts):
     first_name = source.from_user.first_name if hasattr(source.from_user, 'first_name') else "User"
     return (f"Admin@铭\n\n用户 ID: `{uid}`\n用户名称: `{first_name}`\n当前余额: `{pts:.2f}积分`\n\n使用帮助可查看使用教程\n在线充值可支持24小时\n1 USDT = 1 积分")
 
-# ================= 4. 消息处理 =================
+# ================= 5. 消息处理 (保持不变) =================
 
 @bot.message_handler(commands=['start', 'rlhy', 'cyh', '3ys', '2ys', 'cp', 'add', 'sms'])
 def handle_commands(message):
@@ -282,7 +331,7 @@ def handle_all_text(message):
         if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足")
         return xiaowunb_query_logic(chat_id, text, uid)
 
-# ================= 5. 回调处理 =================
+# ================= 6. 回调处理 (保持不变) =================
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -325,6 +374,16 @@ def handle_callback(call):
     elif call.data == "back_to_main":
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=get_main_markup())
 
+# ================= 7. 启动入口 (双线程运行) =================
+
 if __name__ == '__main__':
-    print("Bot 正在运行...")
+    # 启动 Flask API 线程
+    flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    print("🚀 API 已启动 (端口 5000)")
+    print("🤖 Bot 正在运行...")
+    
+    # 启动机器人主循环
     bot.infinity_polling(timeout=10)
