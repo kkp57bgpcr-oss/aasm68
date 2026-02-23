@@ -81,7 +81,7 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         elif "活体" in res_text or "采集失败" in res_text:
             status_head, res_desc = "❌核验失败!", "活体采集失败🔴"
         else:
-            status_head, res_desc = "❌核验失败!", "核验未通过🔴"
+            status_head, res_desc = "❌核验失败!", "人脸核验失败🔴"
 
         user_points[uid] -= 0.1
         save_points()
