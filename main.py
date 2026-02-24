@@ -28,8 +28,6 @@ POINTS_FILE = 'points.json'
 
 # 外部接口配置
 AUTH_BEARER = "bearer eyJhbGciOiJIUzI1NiJ9.eyJwaG9uZSI6IisxOTM3ODg4NDgyNiIsIm9wZW5JZCI6Im95NW8tNHk3Wnd0WGlOaTVHQ3V3YzVVNDZJYk0iLCJpZENhcmRObyI6IjM3MDQ4MTE5ODgwODIwMzUxNCIsInVzZXJOYW1lIjoi6ams5rCR5by6IiwibG9naW5UaW1lIjoxNzY5NDE1NjYxMTk0LCJhcHBJZCI6Ind4ZjVmZDAyZDEwZGJiMjFkMiIsImlzcmVhbG5hbWUiOnRydWUsInNhYXNVc2VySWQiOm51bGwsImNvbXBhbnlJZCI6bnVsbCwiY29tcGFueVZPUyI6bnVsbH0.GwMYvckFHvFbhSi0NXpQDPiv9ZswUBAImN5bUipBla0"
-IMAGE_HOST_API_KEY = "chv_e0sb_e58e156ce7f7c1d4439b550210c718de0c7af8820db77c0cd04e198ed06011b2e32ed1b5a7f1b00e543c76c20f5c64866bb355fde1dca14d6d74f0a1989b567d"
-IMAGE_HOST_URL = "https://imgloc.com/api/1/upload"
 
 bot = telebot.TeleBot(API_TOKEN)
 user_points = {}
@@ -54,42 +52,23 @@ def save_points():
 
 # ================= 2. 功能逻辑 =================
 
-def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
-    """猎魔模糊查询逻辑 - 正在查询"""
-    if not call_msg_id:
-        wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
-    else:
-        bot.edit_message_text(f"⏳ 正在加载第 {page} 页内容...", chat_id, call_msg_id)
-        wait_msg = types.Message(message_id=call_msg_id, from_user=None, date=None, chat=None, content_type=None, options=None, json_string=None)
+def liemo_query_logic(chat_id, text, uid):
+    """猎魔模糊查询逻辑 - 正在查询 (已移除翻页)"""
+    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
 
     api_url = "https://api.kona.uno/API/liemo.php"
     try:
-        response = requests.get(api_url, params={"text": text, "page": page}, timeout=20)
+        # 只查询第一页，移除翻页逻辑
+        response = requests.get(api_url, params={"text": text, "page": 1}, timeout=20)
         res_text = response.text.strip()
         
         if res_text and "未找到" not in res_text:
-            if page == 1 and not call_msg_id:
-                user_points[uid] -= 1.5
-                save_points()
+            user_points[uid] -= 1.5
+            save_points()
             
-            total_pages = 1
-            p_match = re.search(r'第\s*(\d+)\s*/\s*(\d+)\s*页', res_text)
-            if p_match:
-                current_p = int(p_match.group(1))
-                total_pages = int(p_match.group(2))
-            else:
-                current_p = page
-
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            btns = []
-            if current_p > 1:
-                btns.append(types.InlineKeyboardButton("⬅️ 上一页", callback_data=f"lm_{uid}_{current_p-1}_{text}"))
-            if current_p < total_pages:
-                btns.append(types.InlineKeyboardButton("下一页 ➡️", callback_data=f"lm_{uid}_{current_p+1}_{text}"))
-            markup.add(*btns)
-
+            # 清理正文，截断过长内容防止报错
             if len(res_text) > 3800:
-                res_text = res_text[:3800] + "\n\n<b>(内容过多，请翻页查看)</b>"
+                res_text = res_text[:3800] + "\n\n<b>(内容过多，仅显示部分)</b>"
             
             result = (f"🔍 <b>查询关键词: {text}</b>\n"
                       f"——————————————————\n"
@@ -98,47 +77,15 @@ def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
                       f"<b>已扣除 1.5 积分！</b>\n"
                       f"<b>当前余额: {user_points[uid]:.2f}</b>")
             
-            if not call_msg_id:
-                bot.delete_message(chat_id, wait_msg.message_id)
-                bot.send_message(chat_id, result, parse_mode='HTML', reply_markup=markup)
-            else:
-                bot.edit_message_text(result, chat_id, call_msg_id, parse_mode='HTML', reply_markup=markup)
+            bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, result, parse_mode='HTML')
         else:
-            msg = "🔍 未匹配到更多结果。" if page > 1 else f"🔍 关键词: {text}\n\n未匹配到有效信息。\n\n查询无结果，未扣除积分。"
-            if not call_msg_id:
-                bot.delete_message(chat_id, wait_msg.message_id)
-                bot.send_message(chat_id, msg)
-            else:
-                bot.edit_message_text(msg, chat_id, call_msg_id)
+            msg = f"🔍 关键词: {text}\n\n未匹配到有效信息。\n\n查询无结果，未扣除积分。"
+            bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, msg)
                 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ 查询异常: {str(e)}")
-
-def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
-    """人脸核验 - 正在核验"""
-    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
-    try:
-        file_info = bot.get_file(photo_file_id)
-        img_bytes = bot.download_file(file_info.file_path)
-        files = {'source': ('face.jpg', img_bytes, 'image/jpeg')}
-        data = {'key': IMAGE_HOST_API_KEY, 'format': 'json'}
-        up_res = requests.post(IMAGE_HOST_URL, files=files, data=data, timeout=30).json()
-        if up_res.get('status_code') == 200: tp_url = up_res['image']['url']
-        else:
-            bot.edit_message_text("❌ 图床上传失败", chat_id, wait_msg.message_id)
-            return
-        base_url = "https://xiaowunb.top/rlhy.php"
-        params = {"name": name, "sfz": sfz, "tp": tp_url, "key": "小无爱公益"}
-        res_text = requests.get(base_url, params=params, timeout=25).text
-        if "验证成功" in res_text: status_head, res_desc = "✅核验成功!", "人脸核验通过🟢"
-        elif "活体" in res_text or "采集失败" in res_text: status_head, res_desc = "❌核验失败!", "活体采集失败🔴"
-        else: status_head, res_desc = "❌核验失败!", "人脸核验失败🔴"
-        user_points[uid] -= 0.1; save_points()
-        result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
-                  f"<b>已扣除 0.1 积分！</b>\n<b>当前余额: {user_points[uid]:.2f}</b>")
-        bot.delete_message(chat_id, wait_msg.message_id)
-        bot.send_message(chat_id, result, parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
+        bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def cp_query_logic(chat_id, car_no, uid):
     """车牌查询 - 正在查询"""
@@ -215,7 +162,7 @@ def get_main_text(source, uid, pts):
 
 # ================= 4. 消息处理 =================
 
-@bot.message_handler(commands=['start', 'rlhy', '3ys', '2ys', 'cp', 'cx', 'add'])
+@bot.message_handler(commands=['start', '3ys', '2ys', 'cp', 'cx', 'add'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd_parts = message.text.split()
@@ -229,10 +176,6 @@ def handle_commands(message):
         if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         user_states[chat_id] = {'step': 'v_cx'}
         bot.send_message(chat_id, "请输入要查询的信息：")
-    elif cmd == 'rlhy':
-        if current_pts < 0.1: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        user_states[chat_id] = {'step': 'awaiting_rlhy'}
-        bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
     elif cmd == '2ys':
         if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         bot.send_message(chat_id, "请输入：姓名 身份证"); user_states[chat_id] = {'step': 'v_2ys'}
@@ -245,21 +188,14 @@ def handle_commands(message):
     elif cmd == 'add':
         if uid == ADMIN_ID:
             try:
-                target_uid = int(cmd_parts[1]); user_points[target_uid] = user_points.get(target_uid, 0.0) + float(cmd_parts[2])
-                save_points(); bot.reply_to(message, "✅ 充值成功")
-            except: pass
+                target_uid = int(cmd_parts[1])
+                add_amount = float(cmd_parts[2])
+                user_points[target_uid] = user_points.get(target_uid, 0.0) + add_amount
+                save_points()
+                # 修改点：显示用户当前余额
+                bot.reply_to(message, f"✅ 充值成功！\n用户 ID: <code>{target_uid}</code>\n充值金额: {add_amount}\n<b>当前总余额: {user_points[target_uid]:.2f} 积分</b>", parse_mode='HTML')
+            except Exception as e: bot.reply_to(message, f"❌ 格式错误：/add 用户ID 金额\n错误信息: {str(e)}")
         else: bot.reply_to(message, "⛔ 您没有权限访问此命令！")
-
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    uid, chat_id = message.from_user.id, message.chat.id
-    caption = message.caption.strip() if message.caption else ""
-    parts = re.split(r'[,，\s\n]+', caption)
-    if (user_states.get(chat_id, {}).get('step') == 'awaiting_rlhy') or len(parts) >= 2:
-        if len(parts) < 2: return bot.reply_to(message, "⚠️ 请在发送图片备注中输入：姓名 身份证")
-        if user_points.get(uid, 0.0) < 0.1: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        if chat_id in user_states: del user_states[chat_id]
-        threading.Thread(target=process_rlhy, args=(chat_id, parts[0], parts[1], message.photo[-1].file_id, uid)).start()
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_text(message):
@@ -271,7 +207,6 @@ def handle_all_text(message):
         del user_states[chat_id]
         return liemo_query_logic(chat_id, text, uid)
 
-    # --- 核心修改：小写 x 强制触发 /cx ---
     if 'x' in text:
         if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         return liemo_query_logic(chat_id, text, uid)
@@ -298,7 +233,6 @@ def handle_all_text(message):
             if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
             return single_verify_2ys(chat_id, n, i, uid)
     
-    # 自动识别为模糊查询
     if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
     return liemo_query_logic(chat_id, text, uid)
 
@@ -308,26 +242,14 @@ def handle_all_text(message):
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     
-    # 处理翻页回调
-    if call.data.startswith("lm_"):
-        _, owner_id, next_page, keyword = call.data.split('_', 3)
-        if uid != int(owner_id):
-            return bot.answer_callback_query(call.id, "⚠️ 这不是你的查询结果")
-        liemo_query_logic(call.message.chat.id, keyword, uid, page=int(next_page), call_msg_id=call.message.message_id)
-        return
-
     if call.data == "view_help":
+        # 已移除人脸核验描述
         help_text = (
             "<b>🛠️ 使用帮助</b>\n"
             "<b>liemo查询 (猎魔人)</b>\n"
             "<b>发送 /cx 进行查询</b>\n"
             "<b>全天24h秒出 liemo同款接口</b>\n"
             "<b>每次查询扣除 1.5 积分</b>\n"
-            "<b>——————————————————</b>\n"
-            "<b>企业级人脸核验 (与公安系统对比)</b>\n"
-            "<b>发送 /rlhy 先选择一张待核验的图片</b>\n"
-            "<b>附带输入：名字 身份证号</b>\n"
-            "<b>每次核验扣除 0.1 积分</b>\n"
             "<b>——————————————————</b>\n"
             "<b>名字-身份证核验 (企业级)</b>\n"
             "<b>全天 24h 秒出 毫秒级响应</b>\n"
@@ -351,5 +273,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (猎魔1.5积分版+翻页+文案区分)...")
+    print("Bot 正在运行 (已移除人脸与翻页功能)...")
     bot.infinity_polling(timeout=10)
