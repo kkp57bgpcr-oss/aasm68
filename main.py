@@ -55,13 +55,11 @@ def save_points():
 # ================= 2. 功能逻辑 =================
 
 def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
-    """猎魔模糊查询逻辑 - 支持翻页与自动删除提示"""
-    # 如果是新查询，发送“正在查询”；如果是翻页，更新原消息
+    """猎魔模糊查询逻辑 - 正在查询"""
     if not call_msg_id:
         wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     else:
         bot.edit_message_text(f"⏳ 正在加载第 {page} 页内容...", chat_id, call_msg_id)
-        # 构造一个伪消息对象用于统一处理
         wait_msg = types.Message(message_id=call_msg_id, from_user=None, date=None, chat=None, content_type=None, options=None, json_string=None)
 
     api_url = "https://api.kona.uno/API/liemo.php"
@@ -70,12 +68,10 @@ def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
         res_text = response.text.strip()
         
         if res_text and "未找到" not in res_text:
-            # 只有第一页扣分
             if page == 1 and not call_msg_id:
                 user_points[uid] -= 1.5
                 save_points()
             
-            # 解析页码生成按钮
             total_pages = 1
             p_match = re.search(r'第\s*(\d+)\s*/\s*(\d+)\s*页', res_text)
             if p_match:
@@ -102,7 +98,6 @@ def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
                       f"<b>已扣除 1.5 积分！</b>\n"
                       f"<b>当前余额: {user_points[uid]:.2f}</b>")
             
-            # 【核心逻辑】返回结果前删除“正在查询”提示
             if not call_msg_id:
                 bot.delete_message(chat_id, wait_msg.message_id)
                 bot.send_message(chat_id, result, parse_mode='HTML', reply_markup=markup)
@@ -120,7 +115,8 @@ def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
         bot.send_message(chat_id, f"❌ 查询异常: {str(e)}")
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
-    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
+    """人脸核验 - 正在核验"""
+    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     try:
         file_info = bot.get_file(photo_file_id)
         img_bytes = bot.download_file(file_info.file_path)
@@ -142,9 +138,10 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
                   f"<b>已扣除 0.1 积分！</b>\n<b>当前余额: {user_points[uid]:.2f}</b>")
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, result, parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+    except Exception as e: bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def cp_query_logic(chat_id, car_no, uid):
+    """车牌查询 - 正在查询"""
     wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
     try:
@@ -160,7 +157,8 @@ def cp_query_logic(chat_id, car_no, uid):
     except Exception as e: bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
+    """三要素核验 - 正在核验"""
+    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     url = "http://xiaowunb.top/3ys.php"
     params = {"name": name, "sfz": id_card, "sjh": phone}
     try:
@@ -171,10 +169,11 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, f"姓名：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_status}\n\n"
                                   f"<b>已扣除 0.05 积分！</b>\n<b>当前余额：{user_points[uid]:.2f}</b>", parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+    except Exception as e: bot.edit_message_text(f"⚠️ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def single_verify_2ys(chat_id, name, id_card, uid):
-    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
+    """二要素核验 - 正在核验"""
+    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
     headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
     try:
@@ -184,7 +183,7 @@ def single_verify_2ys(chat_id, name, id_card, uid):
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, f"姓名: {name}\n身份证: {id_card}\n结果: {res_type}\n\n"
                                   f"<b>已扣除 0.01 积分！</b>\n<b>当前余额：{user_points[uid]:.2f}</b>", parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+    except Exception as e: bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
 # ================= 3. UI 菜单 =================
 
@@ -229,7 +228,7 @@ def handle_commands(message):
     elif cmd == 'cx':
         if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         user_states[chat_id] = {'step': 'v_cx'}
-        bot.send_message(chat_id, "请输入要查询的关键词：")
+        bot.send_message(chat_id, "请输入要查询的信息：")
     elif cmd == 'rlhy':
         if current_pts < 0.1: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
@@ -270,6 +269,11 @@ def handle_all_text(message):
     
     if state.get('step') == 'v_cx':
         del user_states[chat_id]
+        return liemo_query_logic(chat_id, text, uid)
+
+    # --- 核心修改：小写 x 强制触发 /cx ---
+    if 'x' in text:
+        if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         return liemo_query_logic(chat_id, text, uid)
         
     parts = re.split(r'[,，\s\n]+', text)
@@ -347,5 +351,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (猎魔1.5积分版+翻页+提示自动删除)...")
+    print("Bot 正在运行 (猎魔1.5积分版+翻页+文案区分)...")
     bot.infinity_polling(timeout=10)
