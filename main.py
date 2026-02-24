@@ -11,9 +11,6 @@ import random
 import concurrent.futures
 import inspect  
 import urllib.parse
-import sms_list 
-import sms_list_new
-from sms_list import *
 from Crypto.Cipher import DES3
 from datetime import datetime
 from telebot import types
@@ -94,18 +91,6 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
     except Exception as e:
         bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
-# 短信测压线程函数
-def run_sms_task(chat_id, phone, uid):
-    try:
-        # 调用导入的 sms_list 中的方法，这里根据常见逻辑假设为 sms_list.attack
-        # 如果你的 sms_list 内部函数名不同，请自行微调下一行
-        sms_list.attack(phone) 
-        user_points[uid] -= 3.5
-        save_points()
-        bot.send_message(chat_id, f"✅ 短信测压任务完成\n目标：{phone}\n已扣除 3.5 积分！")
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ 短信任务失败: {str(e)}")
-
 def cp_query_logic(chat_id, car_no, uid):
     url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
     try:
@@ -183,7 +168,7 @@ def get_main_text(source, uid, pts):
 
 # ================= 4. 消息处理 =================
 
-@bot.message_handler(commands=['start', 'rlhy', 'cyh', '3ys', '2ys', 'cp', 'add', 'sms'])
+@bot.message_handler(commands=['start', 'rlhy', 'cyh', '3ys', '2ys', 'cp', 'add'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd_parts = message.text.split()
@@ -193,14 +178,9 @@ def handle_commands(message):
         if uid not in user_points: user_points[uid] = 0.0
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
     elif cmd == 'rlhy':
-        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足(0.1)")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
         bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
-    elif cmd == 'sms':
-        if len(cmd_parts) < 2: return bot.reply_to(message, "请输入格式：/sms 手机号")
-        if user_points.get(uid, 0.0) < 3.5: return bot.reply_to(message, "❌ 积分不足(3.5)")
-        bot.send_message(chat_id, "🚀 测压指令已下达，正在启动...")
-        threading.Thread(target=run_sms_task, args=(chat_id, cmd_parts[1], uid)).start()
     elif cmd == '2ys':
         bot.send_message(chat_id, "请输入：姓名 身份证")
         user_states[chat_id] = {'step': 'v_2ys'}
@@ -208,10 +188,10 @@ def handle_commands(message):
         bot.send_message(chat_id, "请输入：姓名 身份证 手机号")
         user_states[chat_id] = {'step': 'v_3ys'}
     elif cmd == 'cyh':
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足")
+        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
     elif cmd == 'cp':
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足")
+        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
     elif cmd == 'add' and uid == ADMIN_ID:
         try:
@@ -227,7 +207,7 @@ def handle_photo(message):
     
     if (user_states.get(chat_id, {}).get('step') == 'awaiting_rlhy') or len(parts) >= 2:
         if len(parts) < 2: return bot.reply_to(message, "⚠️ 请在发送图片备注中输入：姓名 身份证")
-        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "❌ 积分不足(0.1)")
+        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
         if chat_id in user_states: del user_states[chat_id]
         threading.Thread(target=process_rlhy, args=(chat_id, parts[0], parts[1], message.photo[-1].file_id, uid)).start()
 
@@ -255,7 +235,7 @@ def handle_all_text(message):
 
     # 自动识别
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足")
+        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
         return cp_query_logic(chat_id, text.upper(), uid)
 
     parts = re.split(r'[,，\s\n]+', text)
@@ -266,7 +246,7 @@ def handle_all_text(message):
             elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and p and i:
-            if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足")
+            if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
             return query_3ys_logic(chat_id, n, i, p, uid)
 
     if len(parts) == 2:
@@ -275,11 +255,11 @@ def handle_all_text(message):
             if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and i:
-            if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足")
+            if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
             return single_verify_2ys(chat_id, n, i, uid)
 
     if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足")
+        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
         return xiaowunb_query_logic(chat_id, text, uid)
 
 # ================= 5. 回调处理 =================
@@ -290,10 +270,6 @@ def handle_callback(call):
     if call.data == "view_help":
         help_text = (
             "🛠️️使用帮助\n"
-            "短信测压\n"
-            "发送 /sms 手机号\n"
-            "每次消耗 3.5 积分\n"
-            "——————————————————\n"
             "企业级人脸核验\n"
             "发送 /rlhy 先选择一张待核验的图片\n"
             "附带输入：姓名 身份证号\n"
