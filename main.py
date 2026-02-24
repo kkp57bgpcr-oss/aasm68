@@ -55,7 +55,7 @@ def save_points():
 # ================= 2. 功能逻辑 =================
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
-    wait_msg = bot.send_message(chat_id, "⏳ <b>正在核验...</b>", parse_mode='HTML')
+    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     try:
         file_info = bot.get_file(photo_file_id)
         img_bytes = bot.download_file(file_info.file_path)
@@ -66,7 +66,7 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         if up_res.get('status_code') == 200:
             tp_url = up_res['image']['url']
         else:
-            bot.edit_message_text("❌ <b>图床上传失败</b>", chat_id, wait_msg.message_id, parse_mode='HTML')
+            bot.edit_message_text("❌ 图床上传失败", chat_id, wait_msg.message_id)
             return
 
         base_url = "https://xiaowunb.top/rlhy.php"
@@ -74,22 +74,22 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
         res_text = requests.get(base_url, params=params, timeout=25).text
         
         if "验证成功" in res_text:
-            status_head, res_desc = "✅<b>核验成功!</b>", "人脸核验通过🟢"
+            status_head, res_desc = "✅核验成功!", "人脸核验通过🟢"
         elif "活体" in res_text or "采集失败" in res_text:
-            status_head, res_desc = "❌<b>核验失败!</b>", "活体采集失败🔴"
+            status_head, res_desc = "❌核验失败!", "活体采集失败🔴"
         else:
-            status_head, res_desc = "❌<b>核验失败!</b>", "人脸核验失败🔴"
+            status_head, res_desc = "❌核验失败!", "人脸核验失败🔴"
 
         user_points[uid] -= 0.1
         save_points()
 
-        result = (f"{status_head}\n\n<b>姓名:</b> {name}\n<b>身份证:</b> {sfz}\n<b>结果:</b> {res_desc}\n\n"
-                  f"已扣除 <b>0.1</b> 积分！\n<b>当前余额:</b> <code>{user_points[uid]:.2f}</code>")
+        result = (f"{status_head}\n\n姓名: {name}\n身份证: {sfz}\n结果: {res_desc}\n\n"
+                  f"已扣除 0.1 积分！\n当前余额: {user_points[uid]:.2f}")
         
         bot.delete_message(chat_id, wait_msg.message_id)
-        bot.send_message(chat_id, result, parse_mode='HTML')
+        bot.send_message(chat_id, result)
     except Exception as e:
-        bot.edit_message_text(f"❌ <b>核验异常:</b> {str(e)}", chat_id, wait_msg.message_id, parse_mode='HTML')
+        bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def cp_query_logic(chat_id, car_no, uid):
     url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
@@ -99,11 +99,11 @@ def cp_query_logic(chat_id, car_no, uid):
         raw_res = response.text.strip()
         if raw_res and "未找到" not in raw_res and "错误" not in raw_res:
             user_points[uid] -= 2.5; save_points()
-            message = (f"🚗 <b>车牌查询结果:</b>\n\n<b>车牌号：</b> <code>{car_no}</code>\n<b>详细信息：</b>\n{raw_res}\n\n已扣除 <b>2.5</b> 积分！\n<b>当前余额:</b> <code>{user_points[uid]:.2f}</code>")
+            message = (f"🚗 车牌查询结果:\n\n车牌号：{car_no}\n详细信息：\n{raw_res}\n\n已扣除 2.5 积分！\n当前余额: {user_points[uid]:.2f}")
         else:
-            message = (f"🚗 <b>车牌查询结果:</b>\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n<b>当前余额:</b> <code>{user_points[uid]:.2f}</code>")
-        bot.send_message(chat_id, message, parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"⚠️ <b>车档接口异常:</b> {str(e)}", parse_mode='HTML')
+            message = (f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n当前余额: {user_points[uid]:.2f}")
+        bot.send_message(chat_id, message)
+    except Exception as e: bot.send_message(chat_id, f"⚠️ 车档接口异常: {str(e)}")
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
     url = "http://xiaowunb.top/3ys.php"
@@ -113,9 +113,9 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         response.encoding = 'utf-8'
         user_points[uid] -= 0.05; save_points()
         clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', response.text.strip(), flags=re.DOTALL).strip()
-        res_status = "<b>三要素核验成功✅</b>" if ("成功" in clean_res or "一致" in clean_res) else "<b>三要素核验失败❌</b>"
-        bot.send_message(chat_id, f"<b>姓名：</b> {name}\n<b>手机号：</b> {phone}\n<b>身份证：</b> {id_card}\n<b>结果：</b> {res_status}\n\n已扣除 <b>0.05</b> 积分！\n<b>当前余额：</b> <code>{user_points[uid]:.2f}</code>", parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"⚠️ <b>系统异常:</b> {str(e)}", parse_mode='HTML')
+        res_status = "三要素核验成功✅" if ("成功" in clean_res or "一致" in clean_res) else "三要素核验失败❌"
+        bot.send_message(chat_id, f"姓名：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_status}\n\n已扣除 0.05 积分！\n当前余额：{user_points[uid]:.2f}")
+    except Exception as e: bot.send_message(chat_id, f"⚠️ 系统异常: {str(e)}")
 
 def single_verify_2ys(chat_id, name, id_card, uid):
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
@@ -123,9 +123,9 @@ def single_verify_2ys(chat_id, name, id_card, uid):
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
         user_points[uid] -= 0.01; save_points()
-        res_type = "<b>二要素核验一致✅</b>" if r.json().get("success") else "<b>二要素验证失败 ❌</b>"
-        bot.send_message(chat_id, f"<b>姓名:</b> {name}\n<b>身份证:</b> {id_card}\n<b>结果:</b> {res_type}\n\n已扣除 <b>0.01</b> 积分！\n<b>当前余额：</b> <code>{user_points[uid]:.2f}</code>", parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"❌ <b>接口失败:</b> {str(e)}", parse_mode='HTML')
+        res_type = "二要素核验一致✅" if r.json().get("success") else "二要素验证失败 ❌"
+        bot.send_message(chat_id, f"姓名: {name}\n身份证: {id_card}\n结果: {res_type}\n\n已扣除 0.01 积分！\n当前余额：{user_points[uid]:.2f}")
+    except Exception as e: bot.send_message(chat_id, f"❌ 接口失败: {str(e)}")
 
 # ================= 3. UI 菜单 =================
 
@@ -170,45 +170,45 @@ def handle_commands(message):
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='HTML', reply_markup=get_main_markup())
     
     elif cmd == 'rlhy':
-        if current_pts < 0.1: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+        if current_pts < 0.1: return bot.send_message(chat_id, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
-        bot.send_message(chat_id, "请输入：<b>姓名 身份证</b> 并添加一张人脸图片一起发送。", parse_mode='HTML')
+        bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
     
     elif cmd == '2ys':
-        if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        bot.send_message(chat_id, "请输入：<b>姓名 身份证</b>", parse_mode='HTML')
+        if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
+        bot.send_message(chat_id, "请输入：姓名 身份证")
         user_states[chat_id] = {'step': 'v_2ys'}
     
     elif cmd == '3ys':
-        if current_pts < 0.05: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        bot.send_message(chat_id, "请输入：<b>姓名 身份证 手机号</b>", parse_mode='HTML')
+        if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
+        bot.send_message(chat_id, "请输入：姓名 身份证 手机号")
         user_states[chat_id] = {'step': 'v_3ys'}
     
     elif cmd == 'cp':
-        if current_pts < 2.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入<b>车牌号</b>：", parse_mode='HTML')
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
+        user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
     
     elif cmd == 'add':
         if uid == ADMIN_ID:
             try:
                 target_uid = int(cmd_parts[1])
-                add_pts = float(cmd_parts[2])
-                user_points[target_uid] = user_points.get(target_uid, 0.0) + add_pts
+                user_points[target_uid] = user_points.get(target_uid, 0.0) + float(cmd_parts[2])
                 save_points()
-                bot.reply_to(message, "✅ <b>充值成功</b>", parse_mode='HTML')
+                bot.reply_to(message, "✅ 充值成功")
             except: pass
         else:
-            bot.reply_to(message, "⛔ <b>您没有权限访问此命令！</b>", parse_mode='HTML')
+            bot.reply_to(message, "⛔ 您没有权限访问此命令！")
+
+# ... (此处 handle_photo 和 handle_all_text 部分代码保持不变) ...
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     uid, chat_id = message.from_user.id, message.chat.id
     caption = message.caption.strip() if message.caption else ""
     parts = re.split(r'[,，\s\n]+', caption)
-    
     if (user_states.get(chat_id, {}).get('step') == 'awaiting_rlhy') or len(parts) >= 2:
-        if len(parts) < 2: return bot.reply_to(message, "⚠️ <b>请在发送图片备注中输入：姓名 身份证</b>", parse_mode='HTML')
-        if user_points.get(uid, 0.0) < 0.1: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+        if len(parts) < 2: return bot.reply_to(message, "⚠️ 请在发送图片备注中输入：姓名 身份证")
+        if user_points.get(uid, 0.0) < 0.1: return bot.send_message(chat_id, "积分不足，请先充值！")
         if chat_id in user_states: del user_states[chat_id]
         threading.Thread(target=process_rlhy, args=(chat_id, parts[0], parts[1], message.photo[-1].file_id, uid)).start()
 
@@ -216,34 +216,26 @@ def handle_photo(message):
 def handle_all_text(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return
-
     current_pts = user_points.get(uid, 0.0)
     state = user_states.get(chat_id, {})
-    
-    # 状态识别逻辑
     if state.get('step') == 'v_2ys':
         parts = re.split(r'[,，\s\n]+', text)
         if len(parts) >= 2:
-            if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+            if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
             del user_states[chat_id]
             return single_verify_2ys(chat_id, parts[0], parts[1], uid)
-            
     elif state.get('step') == 'v_3ys':
         parts = re.split(r'[,，\s\n]+', text)
         if len(parts) >= 3:
-            if current_pts < 0.05: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+            if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
             del user_states[chat_id]
             return query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
-            
     elif state.get('step') == 'v_cp':
-        if current_pts < 2.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
         del user_states[chat_id]; return cp_query_logic(chat_id, text.upper(), uid)
-
-    # 自动识别逻辑
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
-        if current_pts < 2.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
         return cp_query_logic(chat_id, text.upper(), uid)
-
     parts = re.split(r'[,，\s\n]+', text)
     if len(parts) >= 3:
         n, p, i = None, None, None
@@ -252,45 +244,45 @@ def handle_all_text(message):
             elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and p and i:
-            if current_pts < 0.05: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+            if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
             return query_3ys_logic(chat_id, n, i, p, uid)
-
     if len(parts) == 2:
         n, i = None, None
         for x in parts:
             if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and i:
-            if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
+            if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
             return single_verify_2ys(chat_id, n, i, uid)
 
-# ================= 5. 回调处理 =================
+# ================= 5. 回调处理 (全粗体修改版) =================
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     if call.data == "view_help":
+        # 这里的每一行都加上了 <b> 标签实现全粗体效果
         help_text = (
             "<b>🛠️ 使用帮助</b>\n"
-            "<b>企业级人脸核验</b>\n"
-            "发送 /rlhy 先选择一张待核验的图片\n"
-            "附带输入：<b>姓名 身份证号</b>\n"
-            "每次核验扣除 <b>0.1</b> 积分\n"
-            "——————————————————\n"
-            "<b>名字-身份证核验（企业级）</b>\n"
-            "全天 24h 秒出 <b>毫秒级响应</b>\n"
-            "发送 /2ys 进行核验\n"
-            "每次核验扣除 <b>0.01</b> 积分\n"
-            "——————————————————\n"
-            "<b>名字-手机号-身份证核验（企业级）</b>\n"
-            "全天 24h 秒出 <b>毫秒级响应</b>\n"
-            "发送 /3ys 进行核验\n"
-            "每次核验扣除 <b>0.05</b> 积分\n"
-            "——————————————————\n"
+            "<b>企业级人脸核验 (与公安系统对比)</b>\n"
+            "<b>发送 /rlhy 先选择一张待核验的图片</b>\n"
+            "<b>附带输入：名字 身份证号</b>\n"
+            "<b>每次核验扣除 0.1 积分</b>\n"
+            "<b>——————————————————</b>\n"
+            "<b>名字-身份证核验 (企业级)</b>\n"
+            "<b>全天 24h 秒出 毫秒级响应</b>\n"
+            "<b>发送 /2ys 进行核验</b>\n"
+            "<b>每次核验扣除 0.01 积分</b>\n"
+            "<b>——————————————————</b>\n"
+            "<b>名字-手机号-身份证核验 (企业级)</b>\n"
+            "<b>全天 24h 秒出 毫秒级响应</b>\n"
+            "<b>发送 /3ys 进行核验</b>\n"
+            "<b>每次核验扣除 0.05 积分</b>\n"
+            "<b>——————————————————</b>\n"
             "<b>车牌号查询</b>\n"
-            "发送 /cp 进行查询\n"
-            "全天 24h 秒出 <b>假 1 赔 10000</b>\n"
-            "每次查询扣除 <b>2.5</b> 积分 空不扣除积分"
+            "<b>发送 /cp 进行查询</b>\n"
+            "<b>全天 24h 秒出 假 1 赔 10000</b>\n"
+            "<b>每次查询扣除 2.5 积分 空不扣除积分</b>"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup(), parse_mode='HTML')
     elif call.data == "view_pay":
@@ -299,5 +291,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (HTML 模式)...")
+    print("Bot 正在运行 (帮助全加粗版)...")
     bot.infinity_polling(timeout=10)
