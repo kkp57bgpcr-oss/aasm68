@@ -155,22 +155,31 @@ def handle_commands(message):
     cmd_parts = message.text.split()
     cmd = cmd_parts[0][1:]
     
+    current_pts = user_points.get(uid, 0.0)
+
     if cmd == 'start':
         if uid not in user_points: user_points[uid] = 0.0
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='Markdown', reply_markup=get_main_markup())
+    
     elif cmd == 'rlhy':
-        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
+        if current_pts < 0.1: return bot.send_message(chat_id, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'awaiting_rlhy'}
         bot.send_message(chat_id, "请输入：姓名 身份证 并添加一张人脸图片一起发送。")
+    
     elif cmd == '2ys':
+        if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
         bot.send_message(chat_id, "请输入：姓名 身份证")
         user_states[chat_id] = {'step': 'v_2ys'}
+    
     elif cmd == '3ys':
+        if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
         bot.send_message(chat_id, "请输入：姓名 身份证 手机号")
         user_states[chat_id] = {'step': 'v_3ys'}
+    
     elif cmd == 'cp':
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
+    
     elif cmd == 'add':
         if uid == ADMIN_ID:
             try:
@@ -188,7 +197,7 @@ def handle_photo(message):
     
     if (user_states.get(chat_id, {}).get('step') == 'awaiting_rlhy') or len(parts) >= 2:
         if len(parts) < 2: return bot.reply_to(message, "⚠️ 请在发送图片备注中输入：姓名 身份证")
-        if user_points.get(uid, 0.0) < 0.1: return bot.reply_to(message, "积分不足，请先充值！")
+        if user_points.get(uid, 0.0) < 0.1: return bot.send_message(chat_id, "积分不足，请先充值！")
         if chat_id in user_states: del user_states[chat_id]
         threading.Thread(target=process_rlhy, args=(chat_id, parts[0], parts[1], message.photo[-1].file_id, uid)).start()
 
@@ -197,26 +206,36 @@ def handle_all_text(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     if text.startswith('/'): return
 
+    current_pts = user_points.get(uid, 0.0)
     state = user_states.get(chat_id, {})
-    # 处理 2要素/3要素 的手动输入状态
+    
+    # 1. 处理处于特定指令等待状态下的输入
     if state.get('step') == 'v_2ys':
         parts = re.split(r'[,，\s\n]+', text)
         if len(parts) >= 2:
+            if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
             del user_states[chat_id]
             return single_verify_2ys(chat_id, parts[0], parts[1], uid)
+            
     elif state.get('step') == 'v_3ys':
         parts = re.split(r'[,，\s\n]+', text)
         if len(parts) >= 3:
+            if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
             del user_states[chat_id]
             return query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
+            
     elif state.get('step') == 'v_cp':
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
         del user_states[chat_id]; return cp_query_logic(chat_id, text.upper(), uid)
 
-    # 自动识别
+    # 2. 处理“直接发送内容”的自动识别逻辑
+    
+    # 自动识别车牌
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
-        if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
+        if current_pts < 2.5: return bot.send_message(chat_id, "积分不足，请先充值！")
         return cp_query_logic(chat_id, text.upper(), uid)
 
+    # 自动识别三要素 (姓名 身份证 手机号)
     parts = re.split(r'[,，\s\n]+', text)
     if len(parts) >= 3:
         n, p, i = None, None, None
@@ -225,16 +244,17 @@ def handle_all_text(message):
             elif not p and re.match(r'^1[3-9]\d{9}$', x): p = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and p and i:
-            if user_points.get(uid, 0.0) < 0.05: return bot.reply_to(message, "积分不足，请先充值！")
+            if current_pts < 0.05: return bot.send_message(chat_id, "积分不足，请先充值！")
             return query_3ys_logic(chat_id, n, i, p, uid)
 
+    # 自动识别二要素 (姓名 身份证)
     if len(parts) == 2:
         n, i = None, None
         for x in parts:
             if not n and re.match(r'^[\u4e00-\u9fa5]{2,4}$', x): n = x
             elif not i and re.match(r'^[\dXx]{15}$|^[\dXx]{18}$', x): i = x.upper()
         if n and i:
-            if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
+            if current_pts < 0.01: return bot.send_message(chat_id, "积分不足，请先充值！")
             return single_verify_2ys(chat_id, n, i, uid)
 
 # ================= 5. 回调处理 =================
