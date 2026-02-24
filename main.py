@@ -54,21 +54,46 @@ def save_points():
 
 # ================= 2. 功能逻辑 =================
 
-def liemo_query_logic(chat_id, text, uid):
-    """猎魔模糊查询逻辑"""
-    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
+def liemo_query_logic(chat_id, text, uid, page=1, call_msg_id=None):
+    """猎魔模糊查询逻辑 - 支持翻页与自动删除提示"""
+    # 如果是新查询，发送“正在查询”；如果是翻页，更新原消息
+    if not call_msg_id:
+        wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
+    else:
+        bot.edit_message_text(f"⏳ 正在加载第 {page} 页内容...", chat_id, call_msg_id)
+        # 构造一个伪消息对象用于统一处理
+        wait_msg = types.Message(message_id=call_msg_id, from_user=None, date=None, chat=None, content_type=None, options=None, json_string=None)
+
     api_url = "https://api.kona.uno/API/liemo.php"
     try:
-        response = requests.get(api_url, params={"text": text}, timeout=20)
+        response = requests.get(api_url, params={"text": text, "page": page}, timeout=20)
         res_text = response.text.strip()
         
         if res_text and "未找到" not in res_text:
-            user_points[uid] -= 1.5  # 修改为1.5积分
-            save_points()
+            # 只有第一页扣分
+            if page == 1 and not call_msg_id:
+                user_points[uid] -= 1.5
+                save_points()
             
-            # 自动处理长文本截断
+            # 解析页码生成按钮
+            total_pages = 1
+            p_match = re.search(r'第\s*(\d+)\s*/\s*(\d+)\s*页', res_text)
+            if p_match:
+                current_p = int(p_match.group(1))
+                total_pages = int(p_match.group(2))
+            else:
+                current_p = page
+
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            btns = []
+            if current_p > 1:
+                btns.append(types.InlineKeyboardButton("⬅️ 上一页", callback_data=f"lm_{uid}_{current_p-1}_{text}"))
+            if current_p < total_pages:
+                btns.append(types.InlineKeyboardButton("下一页 ➡️", callback_data=f"lm_{uid}_{current_p+1}_{text}"))
+            markup.add(*btns)
+
             if len(res_text) > 3800:
-                res_text = res_text[:3800] + "\n\n<b>(内容过多，已自动截断...)</b>"
+                res_text = res_text[:3800] + "\n\n<b>(内容过多，请翻页查看)</b>"
             
             result = (f"🔍 <b>查询关键词: {text}</b>\n"
                       f"——————————————————\n"
@@ -76,16 +101,26 @@ def liemo_query_logic(chat_id, text, uid):
                       f"——————————————————\n"
                       f"<b>已扣除 1.5 积分！</b>\n"
                       f"<b>当前余额: {user_points[uid]:.2f}</b>")
+            
+            # 【核心逻辑】返回结果前删除“正在查询”提示
+            if not call_msg_id:
+                bot.delete_message(chat_id, wait_msg.message_id)
+                bot.send_message(chat_id, result, parse_mode='HTML', reply_markup=markup)
+            else:
+                bot.edit_message_text(result, chat_id, call_msg_id, parse_mode='HTML', reply_markup=markup)
         else:
-            result = f"🔍 <b>查询关键词: {text}</b>\n\n未匹配到有效信息。\n\n查询无结果，未扣除积分。\n<b>当前余额: {user_points[uid]:.2f}</b>"
-        
-        bot.delete_message(chat_id, wait_msg.message_id)
-        bot.send_message(chat_id, result, parse_mode='HTML')
+            msg = "🔍 未匹配到更多结果。" if page > 1 else f"🔍 关键词: {text}\n\n未匹配到有效信息。\n\n查询无结果，未扣除积分。"
+            if not call_msg_id:
+                bot.delete_message(chat_id, wait_msg.message_id)
+                bot.send_message(chat_id, msg)
+            else:
+                bot.edit_message_text(msg, chat_id, call_msg_id)
+                
     except Exception as e:
-        bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+        bot.send_message(chat_id, f"❌ 查询异常: {str(e)}")
 
 def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
-    wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
+    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     try:
         file_info = bot.get_file(photo_file_id)
         img_bytes = bot.download_file(file_info.file_path)
@@ -107,9 +142,10 @@ def process_rlhy(chat_id, name, sfz, photo_file_id, uid):
                   f"<b>已扣除 0.1 积分！</b>\n<b>当前余额: {user_points[uid]:.2f}</b>")
         bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, result, parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"❌ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
+    except Exception as e: bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def cp_query_logic(chat_id, car_no, uid):
+    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
     try:
         response = requests.get(url, timeout=15); response.encoding = 'utf-8'
@@ -119,10 +155,12 @@ def cp_query_logic(chat_id, car_no, uid):
             message = (f"🚗 车牌查询结果:\n\n车牌号：{car_no}\n详细信息：\n{raw_res}\n\n"
                        f"<b>已扣除 2.5 积分！</b>\n<b>当前余额: {user_points[uid]:.2f}</b>")
         else: message = (f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n<b>当前余额: {user_points[uid]:.2f}</b>")
+        bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, message, parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"⚠️ 车档接口异常: {str(e)}")
+    except Exception as e: bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
+    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     url = "http://xiaowunb.top/3ys.php"
     params = {"name": name, "sfz": id_card, "sjh": phone}
     try:
@@ -130,20 +168,23 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
         user_points[uid] -= 0.05; save_points()
         clean_res = re.sub(r'小无 API.*?官方客服:@\w+', '', response.text.strip(), flags=re.DOTALL).strip()
         res_status = "三要素核验成功✅" if ("成功" in clean_res or "一致" in clean_res) else "三要素核验失败❌"
+        bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, f"姓名：{name}\n手机号：{phone}\n身份证：{id_card}\n结果：{res_status}\n\n"
                                   f"<b>已扣除 0.05 积分！</b>\n<b>当前余额：{user_points[uid]:.2f}</b>", parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"⚠️ 系统异常: {str(e)}")
+    except Exception as e: bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def single_verify_2ys(chat_id, name, id_card, uid):
+    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
     headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
     try:
         r = requests.post(url, headers=headers, json={"name": name, "idCardNo": id_card}, timeout=10)
         user_points[uid] -= 0.01; save_points()
         res_type = "二要素核验一致✅" if r.json().get("success") else "二要素验证失败 ❌"
+        bot.delete_message(chat_id, wait_msg.message_id)
         bot.send_message(chat_id, f"姓名: {name}\n身份证: {id_card}\n结果: {res_type}\n\n"
                                   f"<b>已扣除 0.01 积分！</b>\n<b>当前余额：{user_points[uid]:.2f}</b>", parse_mode='HTML')
-    except Exception as e: bot.send_message(chat_id, f"❌ 接口失败: {str(e)}")
+    except Exception as e: bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 # ================= 3. UI 菜单 =================
 
@@ -262,6 +303,15 @@ def handle_all_text(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
+    
+    # 处理翻页回调
+    if call.data.startswith("lm_"):
+        _, owner_id, next_page, keyword = call.data.split('_', 3)
+        if uid != int(owner_id):
+            return bot.answer_callback_query(call.id, "⚠️ 这不是你的查询结果")
+        liemo_query_logic(call.message.chat.id, keyword, uid, page=int(next_page), call_msg_id=call.message.message_id)
+        return
+
     if call.data == "view_help":
         help_text = (
             "<b>🛠️ 使用帮助</b>\n"
@@ -297,5 +347,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (猎魔1.5积分版)...")
+    print("Bot 正在运行 (猎魔1.5积分版+翻页+提示自动删除)...")
     bot.infinity_polling(timeout=10)
