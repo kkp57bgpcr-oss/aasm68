@@ -105,25 +105,6 @@ def cp_query_logic(chat_id, car_no, uid):
         bot.send_message(chat_id, message)
     except Exception as e: bot.send_message(chat_id, f"⚠️ 车档接口异常: {str(e)}")
 
-def xiaowunb_query_logic(chat_id, id_number, uid):
-    base_url = "http://xiaowunb.top/cyh.php"
-    params = {"sfz": id_number}
-    try:
-        response = requests.get(base_url, params=params, timeout=10)
-        response.encoding = 'utf-8'
-        raw_text = response.text.strip()
-        phones = re.findall(r'1[3-9]\d{9}', raw_text)
-        if phones:
-            user_points[uid] -= 1.5; save_points()
-            unique_phones = list(dict.fromkeys(phones))
-            phone_list_str = "".join([f"{idx}、{p}\n" for idx, p in enumerate(unique_phones, 1)])
-            result_body = f"匹配到 {len(unique_phones)} 个有效手机号:\n{phone_list_str}"
-            cost_str = "已扣除 1.5 积分！"
-        else:
-            result_body = "未匹配到有效手机号\n"; cost_str = "查询无结果，未扣除积分。"
-        bot.send_message(chat_id, f"身份证查询结果:\n\n{result_body}\n{cost_str}\n当前余额: {user_points[uid]:.2f}")
-    except Exception as e: bot.send_message(chat_id, f"❌ 接口请求失败: {e}")
-
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
     url = "http://xiaowunb.top/3ys.php"
     params = {"name": name, "sfz": id_card, "sjh": phone}
@@ -168,7 +149,7 @@ def get_main_text(source, uid, pts):
 
 # ================= 4. 消息处理 =================
 
-@bot.message_handler(commands=['start', 'rlhy', 'cyh', '3ys', '2ys', 'cp', 'add'])
+@bot.message_handler(commands=['start', 'rlhy', '3ys', '2ys', 'cp', 'add'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd_parts = message.text.split()
@@ -187,17 +168,17 @@ def handle_commands(message):
     elif cmd == '3ys':
         bot.send_message(chat_id, "请输入：姓名 身份证 手机号")
         user_states[chat_id] = {'step': 'v_3ys'}
-    elif cmd == 'cyh':
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
-        user_states[chat_id] = {'step': 'cyh_id'}; bot.send_message(chat_id, "请输入要查询的身份证号：")
     elif cmd == 'cp':
         if user_points.get(uid, 0.0) < 2.5: return bot.reply_to(message, "积分不足，请先充值！")
         user_states[chat_id] = {'step': 'v_cp'}; bot.send_message(chat_id, "请输入车牌号：")
-    elif cmd == 'add' and uid == ADMIN_ID:
-        try:
-            user_points[int(cmd_parts[1])] = user_points.get(int(cmd_parts[1]), 0.0) + float(cmd_parts[2]); save_points()
-            bot.reply_to(message, "✅ 充值成功")
-        except: pass
+    elif cmd == 'add':
+        if uid == ADMIN_ID:
+            try:
+                user_points[int(cmd_parts[1])] = user_points.get(int(cmd_parts[1]), 0.0) + float(cmd_parts[2]); save_points()
+                bot.reply_to(message, "✅ 充值成功")
+            except: pass
+        else:
+            bot.reply_to(message, "⛔ 您没有权限访问此命令！")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -230,8 +211,6 @@ def handle_all_text(message):
             return query_3ys_logic(chat_id, parts[0], parts[1], parts[2], uid)
     elif state.get('step') == 'v_cp':
         del user_states[chat_id]; return cp_query_logic(chat_id, text.upper(), uid)
-    elif state.get('step') == 'cyh_id':
-        del user_states[chat_id]; return xiaowunb_query_logic(chat_id, text, uid)
 
     # 自动识别
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
@@ -257,10 +236,6 @@ def handle_all_text(message):
         if n and i:
             if user_points.get(uid, 0.0) < 0.01: return bot.reply_to(message, "积分不足，请先充值！")
             return single_verify_2ys(chat_id, n, i, uid)
-
-    if re.match(r'^\d{17}[\dXx]$|^\d{15}$', text):
-        if user_points.get(uid, 0.0) < 1.5: return bot.reply_to(message, "积分不足，请先充值！")
-        return xiaowunb_query_logic(chat_id, text, uid)
 
 # ================= 5. 回调处理 =================
 
@@ -288,12 +263,7 @@ def handle_callback(call):
             "车牌号查询\n"
             "发送 /cp 进行查询\n"
             "全天24h秒出 假1赔10000\n"
-            "每次查询扣除 2.5 积分 空不扣除积分\n"
-            "——————————————————\n"
-            "常用号查询\n"
-            "发送 /cyh 进行查询\n"
-            "全天24h秒出 假1赔10000\n"
-            "每次查询扣除 1.5 积分 空不扣除积分"
+            "每次查询扣除 2.5 积分 空不扣除积分"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup())
     elif call.data == "view_pay":
