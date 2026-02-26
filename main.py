@@ -53,7 +53,7 @@ def save_points():
 # ================= 2. 功能逻辑 =================
 
 def cp_query_logic(chat_id, car_no, uid):
-    """车牌查询 - 已替换为新接口"""
+    """车牌查询 - 对接 ovo1.cc 接口"""
     wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
     
     # 基础信息接口
@@ -70,14 +70,14 @@ def cp_query_logic(chat_id, car_no, uid):
             save_points()
             
             data = res_base.get('data', {})
-            # 基础档案信息
+            # 基础档案信息显示
             result_text = (f"🚗 <b>车牌查询结果: {car_no}</b>\n\n"
                            f"车主姓名：{data.get('name2', '未知')}\n"
                            f"联系电话：{data.get('phone', '未知')}\n"
                            f"身份证号：<code>{data.get('id_card', '未知')}</code>\n"
                            f"联系地址：{data.get('address', '未知')}\n")
             
-            # 尝试请求详细轨迹/停车信息
+            # 尝试请求详细轨迹
             try:
                 res_track = requests.get(track_url, timeout=10).json()
                 if res_track.get('code') == 200:
@@ -87,7 +87,7 @@ def cp_query_logic(chat_id, car_no, uid):
                         for k, v in order_data.items():
                             if v: result_text += f"{k}：{v}\n"
             except:
-                pass # 如果详细信息接口失败，仅显示基础信息
+                pass
 
             result_text += (f"\n<b>已扣除 2.5 积分！</b>\n"
                             f"<b>当前余额: {user_points[uid]:.2f}</b>")
@@ -95,8 +95,12 @@ def cp_query_logic(chat_id, car_no, uid):
             bot.delete_message(chat_id, wait_msg.message_id)
             bot.send_message(chat_id, result_text, parse_mode='HTML')
         else:
+            # 修正显示问题：移除多余字符，确保 HTML 解析
             bot.delete_message(chat_id, wait_msg.message_id)
-            bot.send_message(chat_id, f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n<b>当前余额: {user_points[uid]:.2f}</b>")
+            error_msg = (f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n"
+                         f"查询无结果，未扣除积分。\n"
+                         f"<b>当前余额: {user_points[uid]:.2f}</b>")
+            bot.send_message(chat_id, error_msg, parse_mode='HTML')
             
     except Exception as e:
         bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
@@ -198,7 +202,7 @@ def handle_all_text(message):
     
     parts = re.split(r'[,，\s\n]+', text)
     
-    # 车牌自动识别
+    # 车牌自动识别逻辑
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
         if current_pts < 2.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         return cp_query_logic(chat_id, text.upper(), uid)
@@ -233,7 +237,7 @@ def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     
     if call.data == "view_help":
-        # 保持原始帮助文案不变
+        # ================= 还原后的使用帮助文案 =================
         help_text = (
             "<b>🛠️ 使用帮助</b>\n"
             "<b>名字-身份证核验 (企业级)</b>\n"
@@ -258,5 +262,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (已更新车牌接口逻辑)...")
+    print("Bot 正在运行 (文案还原完成)...")
     bot.infinity_polling(timeout=10)
