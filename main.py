@@ -52,59 +52,57 @@ def save_points():
 
 # ================= 2. 功能逻辑 =================
 
-def liemo_query_logic(chat_id, text, uid):
-    """猎魔模糊查询逻辑 - 正在查询 (已移除翻页)"""
+def cp_query_logic(chat_id, car_no, uid):
+    """车牌查询 - 已替换为新接口"""
     wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
-
-    api_url = "https://api.kona.uno/API/liemo.php"
+    
+    # 基础信息接口
+    base_url = f"https://ovo1.cc/api/car.php?plate={urllib.parse.quote(car_no)}"
+    # 轨迹/详细信息接口
+    track_url = f"https://ovo1.cc/api/chegui.php?message={urllib.parse.quote(car_no)}"
+    
     try:
-        # 只查询第一页，移除翻页逻辑
-        response = requests.get(api_url, params={"text": text, "page": 1}, timeout=20)
-        res_text = response.text.strip()
+        # 请求基础信息
+        res_base = requests.get(base_url, timeout=15).json()
         
-        if res_text and "未找到" not in res_text:
-            user_points[uid] -= 1.5
+        if res_base and res_base.get('code') == 200:
+            user_points[uid] -= 2.5
             save_points()
             
-            # 清理正文，截断过长内容防止报错
-            if len(res_text) > 3800:
-                res_text = res_text[:3800] + "\n\n<b>(内容过多，仅显示部分)</b>"
+            data = res_base.get('data', {})
+            # 基础档案信息
+            result_text = (f"🚗 <b>车牌查询结果: {car_no}</b>\n\n"
+                           f"车主姓名：{data.get('name2', '未知')}\n"
+                           f"联系电话：{data.get('phone', '未知')}\n"
+                           f"身份证号：<code>{data.get('id_card', '未知')}</code>\n"
+                           f"联系地址：{data.get('address', '未知')}\n")
             
-            result = (f"🔍 <b>查询关键词: {text}</b>\n"
-                      f"——————————————————\n"
-                      f"{res_text}\n"
-                      f"——————————————————\n"
-                      f"<b>已扣除 1.5 积分！</b>\n"
-                      f"<b>当前余额: {user_points[uid]:.2f}</b>")
-            
-            bot.delete_message(chat_id, wait_msg.message_id)
-            bot.send_message(chat_id, result, parse_mode='HTML')
-        else:
-            msg = f"🔍 关键词: {text}\n\n未匹配到有效信息。\n\n查询无结果，未扣除积分。"
-            bot.delete_message(chat_id, wait_msg.message_id)
-            bot.send_message(chat_id, msg)
-                
-    except Exception as e:
-        bot.edit_message_text(f"❌ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+            # 尝试请求详细轨迹/停车信息
+            try:
+                res_track = requests.get(track_url, timeout=10).json()
+                if res_track.get('code') == 200:
+                    order_data = res_track.get('data', {}).get('订单信息', {})
+                    if order_data:
+                        result_text += "\n📑 <b>详细订单信息：</b>\n"
+                        for k, v in order_data.items():
+                            if v: result_text += f"{k}：{v}\n"
+            except:
+                pass # 如果详细信息接口失败，仅显示基础信息
 
-def cp_query_logic(chat_id, car_no, uid):
-    """车牌查询 - 正在查询"""
-    wait_msg = bot.send_message(chat_id, "⏳ 正在查询...")
-    url = f"http://zgzapi.idc.cn.com/车档.php?key=体验卡&cph={urllib.parse.quote(car_no)}"
-    try:
-        response = requests.get(url, timeout=15); response.encoding = 'utf-8'
-        raw_res = response.text.strip()
-        if raw_res and "未找到" not in raw_res and "错误" not in raw_res:
-            user_points[uid] -= 2.5; save_points()
-            message = (f"🚗 车牌查询结果:\n\n车牌号：{car_no}\n详细信息：\n{raw_res}\n\n"
-                       f"<b>已扣除 2.5 积分！</b>\n<b>当前余额: {user_points[uid]:.2f}</b>")
-        else: message = (f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n<b>当前余额: {user_points[uid]:.2f}</b>")
-        bot.delete_message(chat_id, wait_msg.message_id)
-        bot.send_message(chat_id, message, parse_mode='HTML')
-    except Exception as e: bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
+            result_text += (f"\n<b>已扣除 2.5 积分！</b>\n"
+                            f"<b>当前余额: {user_points[uid]:.2f}</b>")
+            
+            bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, result_text, parse_mode='HTML')
+        else:
+            bot.delete_message(chat_id, wait_msg.message_id)
+            bot.send_message(chat_id, f"🚗 车牌查询结果:\n\n未匹配到有效车档信息。\n\n查询无结果，未扣除积分。\n<b>当前余额: {user_points[uid]:.2f}</b>")
+            
+    except Exception as e:
+        bot.edit_message_text(f"⚠️ 查询异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def query_3ys_logic(chat_id, name, id_card, phone, uid):
-    """三要素核验 - 正在核验"""
+    """三要素核验"""
     wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     url = "http://xiaowunb.top/3ys.php"
     params = {"name": name, "sfz": id_card, "sjh": phone}
@@ -119,7 +117,7 @@ def query_3ys_logic(chat_id, name, id_card, phone, uid):
     except Exception as e: bot.edit_message_text(f"⚠️ 核验异常: {str(e)}", chat_id, wait_msg.message_id)
 
 def single_verify_2ys(chat_id, name, id_card, uid):
-    """二要素核验 - 正在核验"""
+    """二要素核验"""
     wait_msg = bot.send_message(chat_id, "⏳ 正在核验...")
     url = "https://api.xhmxb.com/wxma/moblie/wx/v1/realAuthToken"
     headers = {"Authorization": AUTH_BEARER, "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": "https://servicewechat.com/wxf5fd02d10dbb21d2/59/page-frame.html"}
@@ -162,7 +160,7 @@ def get_main_text(source, uid, pts):
 
 # ================= 4. 消息处理 =================
 
-@bot.message_handler(commands=['start', '3ys', '2ys', 'cp', 'cx', 'add'])
+@bot.message_handler(commands=['start', '3ys', '2ys', 'cp', 'add'])
 def handle_commands(message):
     uid, chat_id = message.from_user.id, message.chat.id
     cmd_parts = message.text.split()
@@ -172,10 +170,6 @@ def handle_commands(message):
     if cmd == 'start':
         if uid not in user_points: user_points[uid] = 0.0
         bot.send_message(chat_id, get_main_text(message, uid, user_points[uid]), parse_mode='HTML', reply_markup=get_main_markup())
-    elif cmd == 'cx':
-        if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        user_states[chat_id] = {'step': 'v_cx'}
-        bot.send_message(chat_id, "请输入要查询的信息：")
     elif cmd == '2ys':
         if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         bot.send_message(chat_id, "请输入：姓名 身份证"); user_states[chat_id] = {'step': 'v_2ys'}
@@ -192,9 +186,8 @@ def handle_commands(message):
                 add_amount = float(cmd_parts[2])
                 user_points[target_uid] = user_points.get(target_uid, 0.0) + add_amount
                 save_points()
-                # 修改点：显示用户当前余额
                 bot.reply_to(message, f"✅ 充值成功！\n用户 ID: <code>{target_uid}</code>\n充值金额: {add_amount}\n<b>当前总余额: {user_points[target_uid]:.2f} 积分</b>", parse_mode='HTML')
-            except Exception as e: bot.reply_to(message, f"❌ 格式错误：/add 用户ID 金额\n错误信息: {str(e)}")
+            except Exception as e: bot.reply_to(message, f"❌ 格式错误：/add 用户ID 金额")
         else: bot.reply_to(message, "⛔ 您没有权限访问此命令！")
 
 @bot.message_handler(func=lambda m: True)
@@ -203,18 +196,14 @@ def handle_all_text(message):
     if text.startswith('/'): return
     current_pts = user_points.get(uid, 0.0); state = user_states.get(chat_id, {})
     
-    if state.get('step') == 'v_cx':
-        del user_states[chat_id]
-        return liemo_query_logic(chat_id, text, uid)
-
-    if 'x' in text:
-        if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-        return liemo_query_logic(chat_id, text, uid)
-        
     parts = re.split(r'[,，\s\n]+', text)
+    
+    # 车牌自动识别
     if re.match(r'^[京津沪渝冀豫云辽黑湖南皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼]{1}[A-Z]{1}[A-Z0-9]{5,6}$', text.upper()):
         if current_pts < 2.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
         return cp_query_logic(chat_id, text.upper(), uid)
+    
+    # 三要素自动识别
     if len(parts) >= 3:
         n, p, i = None, None, None
         for x in parts:
@@ -224,6 +213,8 @@ def handle_all_text(message):
         if n and p and i:
             if current_pts < 0.05: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
             return query_3ys_logic(chat_id, n, i, p, uid)
+            
+    # 二要素自动识别
     if len(parts) == 2:
         n, i = None, None
         for x in parts:
@@ -233,8 +224,7 @@ def handle_all_text(message):
             if current_pts < 0.01: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
             return single_verify_2ys(chat_id, n, i, uid)
     
-    if current_pts < 1.5: return bot.send_message(chat_id, "<b>积分不足，请先充值！</b>", parse_mode='HTML')
-    return liemo_query_logic(chat_id, text, uid)
+    bot.send_message(chat_id, "⚠️ 无法识别您的输入，请发送 /start 查看可用功能。")
 
 # ================= 5. 回调处理 =================
 
@@ -243,14 +233,9 @@ def handle_callback(call):
     uid, pts = call.from_user.id, user_points.get(call.from_user.id, 0.0)
     
     if call.data == "view_help":
-        # 已移除人脸核验描述
+        # 保持原始帮助文案不变
         help_text = (
             "<b>🛠️ 使用帮助</b>\n"
-            "<b>liemo查询 (猎魔人)</b>\n"
-            "<b>发送 /cx 进行查询</b>\n"
-            "<b>全天24h秒出 liemo同款接口</b>\n"
-            "<b>每次查询扣除 1.5 积分</b>\n"
-            "<b>——————————————————</b>\n"
             "<b>名字-身份证核验 (企业级)</b>\n"
             "<b>全天 24h 秒出 毫秒级响应</b>\n"
             "<b>发送 /2ys 进行核验</b>\n"
@@ -263,7 +248,7 @@ def handle_callback(call):
             "<b>——————————————————</b>\n"
             "<b>车牌号查询</b>\n"
             "<b>发送 /cp 进行查询</b>\n"
-            "<b>全天 24h 秒出 假 1 赔 10000</b>\n"
+            "<b>全天 24h 秒出</b>\n"
             "<b>每次查询扣除 2.5 积分 空不扣除积分</b>"
         )
         bot.edit_message_text(help_text, call.message.chat.id, call.message.message_id, reply_markup=get_help_markup(), parse_mode='HTML')
@@ -273,5 +258,5 @@ def handle_callback(call):
         bot.edit_message_text(get_main_text(call, uid, pts), call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=get_main_markup())
 
 if __name__ == '__main__':
-    print("Bot 正在运行 (已移除人脸与翻页功能)...")
+    print("Bot 正在运行 (已更新车牌接口逻辑)...")
     bot.infinity_polling(timeout=10)
